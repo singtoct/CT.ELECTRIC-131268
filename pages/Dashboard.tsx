@@ -1,11 +1,13 @@
 import React from 'react';
 import { useFactoryData } from '../App';
+import { useTranslation } from '../services/i18n';
 import StatCard from '../components/StatCard';
 import { Package, Activity, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const Dashboard: React.FC = () => {
   const { packing_orders, factory_machines, molding_logs, packing_qc_entries } = useFactoryData();
+  const { t } = useTranslation();
 
   // Calculate Stats
   const totalOrders = packing_orders?.length || 0;
@@ -45,7 +47,7 @@ const Dashboard: React.FC = () => {
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="Total Orders" 
+          title={t('dash.totalOrders')}
           value={totalOrders} 
           icon={Package} 
           color="blue"
@@ -53,23 +55,23 @@ const Dashboard: React.FC = () => {
           trendUp={true}
         />
         <StatCard 
-          title="Active Machines" 
+          title={t('dash.activeMachines')}
           value={`${activeMachines} / ${totalMachines}`} 
           icon={Activity} 
           color="green"
         />
         <StatCard 
-          title="Total Production" 
+          title={t('dash.totalProduction')}
           value={totalProduced.toLocaleString()} 
           icon={CheckCircle2} 
           color="purple"
         />
         <StatCard 
-          title="Pending QC" 
+          title={t('dash.pendingQC')}
           value={pending} 
           icon={AlertCircle} 
           color="orange"
-          trend={`${Math.round((pending / (passed+pending+failed || 1)) * 100)}% of total`}
+          trend={`${Math.round((pending / (passed+pending+failed || 1)) * 100)}% ${t('dash.ofTotal')}`}
           trendUp={false}
         />
       </div>
@@ -78,7 +80,7 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Production Volume */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Production Volume by Machine</h3>
+          <h3 className="text-lg font-bold text-slate-800 mb-4">{t('dash.productionVolume')}</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={barChartData}>
@@ -94,7 +96,7 @@ const Dashboard: React.FC = () => {
 
         {/* QC Distribution */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Quality Control Status</h3>
+          <h3 className="text-lg font-bold text-slate-800 mb-4">{t('dash.qcStatus')}</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -130,18 +132,18 @@ const Dashboard: React.FC = () => {
       {/* Recent Production Logs */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100">
-            <h3 className="text-lg font-bold text-slate-800">Recent Production Logs</h3>
+            <h3 className="text-lg font-bold text-slate-800">{t('dash.recentLogs')}</h3>
         </div>
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-slate-500 font-medium">
                     <tr>
                         <th className="px-6 py-4">Job ID</th>
-                        <th className="px-6 py-4">Product</th>
+                        <th className="px-6 py-4">{t('prod.productDetail')}</th>
                         <th className="px-6 py-4">Machine</th>
-                        <th className="px-6 py-4">Quantity</th>
-                        <th className="px-6 py-4">Date</th>
-                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">{t('orders.quantity')}</th>
+                        <th className="px-6 py-4">{t('qc.on')}</th>
+                        <th className="px-6 py-4">{t('orders.status')}</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">

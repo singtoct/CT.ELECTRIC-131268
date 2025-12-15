@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useFactoryData } from '../App';
+import { useTranslation } from '../services/i18n';
 import { Archive, Layers, Search } from 'lucide-react';
 
 const Inventory: React.FC = () => {
   const { packing_inventory, packing_raw_materials } = useFactoryData();
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'finished' | 'raw'>('finished');
   const [search, setSearch] = useState('');
 
@@ -14,8 +16,8 @@ const Inventory: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Inventory Management</h2>
-          <p className="text-slate-500">Track finished goods and raw materials.</p>
+          <h2 className="text-2xl font-bold text-slate-800">{t('inv.title')}</h2>
+          <p className="text-slate-500">{t('inv.subtitle')}</p>
         </div>
       </div>
 
@@ -31,7 +33,7 @@ const Inventory: React.FC = () => {
             }`}
           >
             <Archive size={18} />
-            Finished Goods ({packing_inventory?.length || 0})
+            {t('inv.finishedGoods')} ({packing_inventory?.length || 0})
           </button>
           <button
             onClick={() => setActiveTab('raw')}
@@ -42,7 +44,7 @@ const Inventory: React.FC = () => {
             }`}
           >
             <Layers size={18} />
-            Raw Materials ({packing_raw_materials?.length || 0})
+            {t('inv.rawMaterials')} ({packing_raw_materials?.length || 0})
           </button>
         </nav>
       </div>
@@ -53,7 +55,7 @@ const Inventory: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
-              placeholder={`Search ${activeTab === 'finished' ? 'finished goods' : 'materials'}...`} 
+              placeholder={activeTab === 'finished' ? t('inv.searchFinished') : t('inv.searchRaw')} 
               className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -67,11 +69,11 @@ const Inventory: React.FC = () => {
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4">Item Name</th>
-                <th className="px-6 py-4 text-right">Quantity</th>
-                <th className="px-6 py-4 text-right">Unit</th>
-                {activeTab === 'raw' && <th className="px-6 py-4 text-right">Cost/Unit</th>}
-                <th className="px-6 py-4 text-center">Status</th>
+                <th className="px-6 py-4">{t('inv.itemName')}</th>
+                <th className="px-6 py-4 text-right">{t('orders.quantity')}</th>
+                <th className="px-6 py-4 text-right">{t('inv.unit')}</th>
+                {activeTab === 'raw' && <th className="px-6 py-4 text-right">{t('inv.costUnit')}</th>}
+                <th className="px-6 py-4 text-center">{t('inv.status')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -87,11 +89,11 @@ const Inventory: React.FC = () => {
                   )}
                   <td className="px-6 py-4 text-center">
                      {(item.quantity || 0) <= 0 ? (
-                         <span className="inline-flex px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold">Out of Stock</span>
+                         <span className="inline-flex px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold">{t('inv.outOfStock')}</span>
                      ) : (item.quantity || 0) < 100 ? (
-                         <span className="inline-flex px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold">Low Stock</span>
+                         <span className="inline-flex px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold">{t('inv.lowStock')}</span>
                      ) : (
-                         <span className="inline-flex px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">In Stock</span>
+                         <span className="inline-flex px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">{t('inv.inStock')}</span>
                      )}
                   </td>
                 </tr>
@@ -99,7 +101,7 @@ const Inventory: React.FC = () => {
               {filteredData.length === 0 && (
                 <tr>
                   <td colSpan={activeTab === 'raw' ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
-                    No items found.
+                    {t('orders.noFound')}
                   </td>
                 </tr>
               )}

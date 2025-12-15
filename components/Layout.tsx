@@ -1,19 +1,22 @@
 import React from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Factory, ClipboardCheck, Users, Box } from 'lucide-react';
+import { LayoutDashboard, Package, Factory, ClipboardCheck, Users, Box, Settings as SettingsIcon } from 'lucide-react';
 import { useFactoryData } from '../App';
+import { useTranslation } from '../services/i18n';
 
 const Layout: React.FC = () => {
   const { factory_settings } = useFactoryData();
+  const { t, language, setLanguage } = useTranslation();
   const location = useLocation();
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/orders', label: 'Orders', icon: Package },
-    { path: '/production', label: 'Production', icon: Factory },
-    { path: '/inventory', label: 'Inventory', icon: Box },
-    { path: '/qc', label: 'Quality Control', icon: ClipboardCheck },
-    { path: '/employees', label: 'Employees', icon: Users },
+    { path: '/dashboard', label: 'nav.dashboard', icon: LayoutDashboard },
+    { path: '/orders', label: 'nav.orders', icon: Package },
+    { path: '/production', label: 'nav.production', icon: Factory },
+    { path: '/inventory', label: 'nav.inventory', icon: Box },
+    { path: '/qc', label: 'nav.qc', icon: ClipboardCheck },
+    { path: '/employees', label: 'nav.employees', icon: Users },
+    { path: '/settings', label: 'nav.settings', icon: SettingsIcon },
   ];
 
   return (
@@ -48,7 +51,7 @@ const Layout: React.FC = () => {
                 }
               >
                 <Icon size={20} />
-                <span className="font-medium">{item.label}</span>
+                <span className="font-medium">{t(item.label)}</span>
               </NavLink>
             );
           })}
@@ -61,13 +64,37 @@ const Layout: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header for Mobile/Tablet mostly, or just context */}
+        {/* Header */}
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 md:px-10">
            <h1 className="text-xl font-semibold text-slate-800 capitalize">
-             {location.pathname.replace('/', '')}
+             {t(`nav.${location.pathname.replace('/', '')}`)}
            </h1>
            <div className="flex items-center space-x-4">
-             <span className="text-sm text-slate-500">Welcome, Manager</span>
+             {/* Language Switcher */}
+             <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                <button 
+                  onClick={() => setLanguage('th')} 
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${language === 'th' ? 'bg-white shadow text-primary-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  TH
+                </button>
+                <button 
+                  onClick={() => setLanguage('en')} 
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${language === 'en' ? 'bg-white shadow text-primary-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  EN
+                </button>
+                <button 
+                  onClick={() => setLanguage('cn')} 
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${language === 'cn' ? 'bg-white shadow text-primary-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  CN
+                </button>
+             </div>
+
+             <div className="h-6 w-px bg-slate-200 mx-2"></div>
+
+             <span className="text-sm text-slate-500 hidden sm:inline">{t('nav.welcome')}, Manager</span>
              <div className="h-8 w-8 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center font-bold">
                M
              </div>

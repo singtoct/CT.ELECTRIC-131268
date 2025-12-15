@@ -1,15 +1,17 @@
 import React from 'react';
 import { useFactoryData } from '../App';
+import { useTranslation } from '../services/i18n';
 import { User, DollarSign, Briefcase } from 'lucide-react';
 
 const Employees: React.FC = () => {
   const { packing_employees } = useFactoryData();
+  const { t } = useTranslation();
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Employee Directory</h2>
-        <p className="text-slate-500">Manage workforce and assignments.</p>
+        <h2 className="text-2xl font-bold text-slate-800">{t('emp.title')}</h2>
+        <p className="text-slate-500">{t('emp.subtitle')}</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -17,11 +19,11 @@ const Employees: React.FC = () => {
             <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                     <tr>
-                        <th className="px-6 py-4">Name</th>
-                        <th className="px-6 py-4">Department</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Daily Wage</th>
-                        <th className="px-6 py-4">Hire Date</th>
+                        <th className="px-6 py-4">{t('emp.name')}</th>
+                        <th className="px-6 py-4">{t('emp.department')}</th>
+                        <th className="px-6 py-4">{t('orders.status')}</th>
+                        <th className="px-6 py-4">{t('emp.dailyWage')}</th>
+                        <th className="px-6 py-4">{t('emp.hireDate')}</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">

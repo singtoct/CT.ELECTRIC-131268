@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useFactoryData } from '../App';
-import { Cpu, Clock, Calendar, FileText, ChevronRight, BarChart3, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useTranslation } from '../services/i18n';
+import { Cpu, Clock, Calendar, FileText, BarChart3, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 const Production: React.FC = () => {
   const { factory_machines, molding_logs, packing_orders } = useFactoryData();
+  const { t } = useTranslation();
   
   // Set default date to 2025-12-12 for demo purposes
   const [selectedDate, setSelectedDate] = useState<string>('2025-12-12');
@@ -14,7 +16,7 @@ const Production: React.FC = () => {
      return activeLog;
   };
 
-  // --- Logic 1: Overall Active PO Progress (The NEW Smart Function) ---
+  // --- Logic 1: Overall Active PO Progress ---
   const activeOrdersProgress = useMemo(() => {
     // Filter only Open or In Progress orders
     const activeOrders = packing_orders?.filter(o => o.status === 'Open' || o.status === 'In Progress') || [];
@@ -101,8 +103,8 @@ const Production: React.FC = () => {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Production Floor</h2>
-        <p className="text-slate-500">Overview of machine status and order progress.</p>
+        <h2 className="text-2xl font-bold text-slate-800">{t('prod.title')}</h2>
+        <p className="text-slate-500">{t('prod.subtitle')}</p>
       </div>
 
       {/* 1. Machine Status Cards */}
@@ -140,7 +142,7 @@ const Production: React.FC = () => {
                             <span className="font-medium text-slate-800 line-clamp-1" title={currentJob.productName}>{currentJob.productName}</span>
                         </div>
                          <div className="text-xs text-slate-500 flex justify-between items-center mt-2">
-                             <span className="flex items-center gap-1"><Clock size={12}/> Shift: {currentJob.shift}</span>
+                             <span className="flex items-center gap-1"><Clock size={12}/> {t('prod.shift')}: {currentJob.shift}</span>
                              <span className="font-mono font-bold text-primary-600">{(currentJob.quantityProduced || 0).toLocaleString()} pcs</span>
                          </div>
                     </>
@@ -163,8 +165,8 @@ const Production: React.FC = () => {
                     <BarChart3 size={24} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-bold text-slate-800">Active Production Orders Summary</h3>
-                    <p className="text-sm text-slate-500">สรุปสถานะใบสั่งผลิตที่เปิดอยู่ทั้งหมด ({activeOrdersProgress.length} รายการ)</p>
+                    <h3 className="text-lg font-bold text-slate-800">{t('prod.activeSummary')}</h3>
+                    <p className="text-sm text-slate-500">{t('prod.activeSummarySub')} ({activeOrdersProgress.length})</p>
                 </div>
             </div>
         </div>
@@ -172,13 +174,13 @@ const Production: React.FC = () => {
             <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                     <tr>
-                        <th className="px-6 py-4">PO Number</th>
-                        <th className="px-6 py-4">Product Detail</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4 text-right">Target</th>
-                        <th className="px-6 py-4 text-right text-green-700">Produced</th>
-                        <th className="px-6 py-4 text-right text-red-600">Remaining</th>
-                        <th className="px-6 py-4 w-1/4">Progress</th>
+                        <th className="px-6 py-4">{t('prod.poNumber')}</th>
+                        <th className="px-6 py-4">{t('prod.productDetail')}</th>
+                        <th className="px-6 py-4">{t('orders.status')}</th>
+                        <th className="px-6 py-4 text-right">{t('prod.target')}</th>
+                        <th className="px-6 py-4 text-right text-green-700">{t('prod.produced')}</th>
+                        <th className="px-6 py-4 text-right text-red-600">{t('prod.remaining')}</th>
+                        <th className="px-6 py-4 w-1/4">{t('prod.progress')}</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -227,7 +229,7 @@ const Production: React.FC = () => {
                     {activeOrdersProgress.length === 0 && (
                         <tr>
                             <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
-                                No active orders found.
+                                {t('prod.noActive')}
                             </td>
                         </tr>
                     )}
@@ -244,8 +246,8 @@ const Production: React.FC = () => {
                     <FileText size={24} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-bold text-slate-800">Daily Production Log</h3>
-                    <p className="text-sm text-slate-500">รายงานยอดผลิตรายวัน (แยกตามเครื่อง)</p>
+                    <h3 className="text-lg font-bold text-slate-800">{t('prod.dailyLog')}</h3>
+                    <p className="text-sm text-slate-500">{t('prod.dailyLogSub')}</p>
                 </div>
             </div>
             
@@ -265,11 +267,11 @@ const Production: React.FC = () => {
                 <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                     <tr>
                         <th className="px-6 py-4">Machine</th>
-                        <th className="px-6 py-4">PO Number</th>
-                        <th className="px-6 py-4">Product Detail</th>
-                        <th className="px-6 py-4 text-right bg-blue-50/50 text-blue-700">Output Today</th>
-                        <th className="px-6 py-4 text-right">Accumulated / Target</th>
-                        <th className="px-6 py-4">Status Today</th>
+                        <th className="px-6 py-4">{t('prod.poNumber')}</th>
+                        <th className="px-6 py-4">{t('prod.productDetail')}</th>
+                        <th className="px-6 py-4 text-right bg-blue-50/50 text-blue-700">{t('prod.outputToday')}</th>
+                        <th className="px-6 py-4 text-right">{t('prod.accumulated')}</th>
+                        <th className="px-6 py-4">{t('prod.statusToday')}</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -284,7 +286,7 @@ const Production: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="text-slate-900 font-medium">{(row.totalAccumulated || 0).toLocaleString()}</div>
-                                    <div className="text-xs text-slate-500">of {row.target > 0 ? row.target.toLocaleString() : '-'}</div>
+                                    <div className="text-xs text-slate-500">{t('dash.ofTotal')} {row.target > 0 ? row.target.toLocaleString() : '-'}</div>
                                 </td>
                                 <td className="px-6 py-4 w-40">
                                    <div className="text-xs text-right text-slate-500">
@@ -298,7 +300,7 @@ const Production: React.FC = () => {
                             <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
                                 <div className="flex flex-col items-center justify-center gap-2">
                                     <FileText size={32} className="text-slate-300" />
-                                    <p>No production logs found for this date.</p>
+                                    <p>{t('prod.noLogs')}</p>
                                     <p className="text-xs">Try selecting a different date (e.g., 2025-12-12)</p>
                                 </div>
                             </td>
@@ -308,7 +310,7 @@ const Production: React.FC = () => {
                 {dailyReportData.length > 0 && (
                     <tfoot className="bg-slate-50 font-bold text-slate-800 border-t border-slate-200">
                         <tr>
-                            <td colSpan={3} className="px-6 py-4 text-right">Daily Total:</td>
+                            <td colSpan={3} className="px-6 py-4 text-right">{t('prod.dailyTotal')}</td>
                             <td className="px-6 py-4 text-right text-blue-700">
                                 {dailyReportData.reduce((sum, row) => sum + (row.producedToday || 0), 0).toLocaleString()}
                             </td>
