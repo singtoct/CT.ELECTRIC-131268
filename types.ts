@@ -1,3 +1,4 @@
+
 export interface PackingOrder {
   id: string;
   name: string;
@@ -86,6 +87,46 @@ export interface QcEntry {
   employeeName: string;
 }
 
+// --- New Settings Interfaces ---
+
+export interface CompanyInfo {
+  name: string;
+  address: string;
+  taxId: string;
+  phone: string;
+  email: string;
+  logoUrl: string;
+}
+
+export interface CostItem {
+  id: string;
+  name: string;
+  value: number;
+  unit?: string; // e.g., /month, /year
+}
+
+export interface ProductionConfig {
+  shifts: string[]; 
+  lowStockThreshold: number; 
+  vatRate: number;
+  regrindPercentage: number; // New
+  workingHoursPerDay: number; // New
+}
+
+export interface FactorySettings {
+  name?: string; // Legacy
+  companyInfo: CompanyInfo;
+  productionConfig: ProductionConfig;
+  
+  // Dynamic Lists from UI
+  qcRejectReasons: string[];
+  machineStatuses: string[];
+  productionSteps: string[];
+  departments: string[];
+  overheadCosts: CostItem[];
+  machineDepreciation: CostItem[];
+}
+
 export interface FactoryData {
   packing_orders: PackingOrder[];
   packing_logs: PackingLog[];
@@ -95,6 +136,6 @@ export interface FactoryData {
   factory_machines: Machine[];
   packing_qc_entries: QcEntry[];
   packing_raw_materials: InventoryItem[];
-  factory_products: any[]; // Simplified for brevity
-  factory_settings: any;
+  factory_products: any[];
+  factory_settings: FactorySettings;
 }

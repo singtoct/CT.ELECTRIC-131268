@@ -1,13 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
 import { Archive, Layers, Search } from 'lucide-react';
 
-const Inventory: React.FC = () => {
+interface InventoryProps {
+    defaultTab?: 'finished' | 'raw';
+}
+
+const Inventory: React.FC<InventoryProps> = ({ defaultTab = 'finished' }) => {
   const { packing_inventory, packing_raw_materials } = useFactoryData();
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'finished' | 'raw'>('finished');
+  const [activeTab, setActiveTab] = useState<'finished' | 'raw'>(defaultTab);
   const [search, setSearch] = useState('');
+
+  // Update tab if prop changes (e.g. navigation)
+  useEffect(() => {
+      setActiveTab(defaultTab);
+  }, [defaultTab]);
 
   const data = activeTab === 'finished' ? (packing_inventory || []) : (packing_raw_materials || []);
   const filteredData = data.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));

@@ -8,10 +8,19 @@ import Inventory from './pages/Inventory';
 import QC from './pages/QC';
 import Employees from './pages/Employees';
 import Settings from './pages/Settings';
+// New Pages
+import Kanban from './pages/Kanban';
+import Customers from './pages/Customers';
+import Maintenance from './pages/Maintenance';
+import Shipping from './pages/Shipping';
+import Products from './pages/Products';
+import Analytics from './pages/Analytics';
+
 import { FactoryData } from './types';
-import { LanguageProvider } from './services/i18n';
+import { LanguageProvider, useTranslation } from './services/i18n';
 import { fetchFactoryData, saveFactoryData } from './services/firebase';
 import { getFactoryData as getLocalDefault } from './services/database';
+import { Construction } from 'lucide-react';
 
 // Data Context
 const FactoryContext = createContext<FactoryData | null>(null);
@@ -37,6 +46,20 @@ export const useFactoryActions = () => {
   return context;
 };
 
+// --- Placeholder Component for Future Modules ---
+const ComingSoon: React.FC<{title?: string}> = ({title}) => {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
+      <div className="bg-slate-100 p-6 rounded-full mb-4">
+        <Construction size={48} className="text-slate-400" />
+      </div>
+      <h2 className="text-xl font-bold text-slate-700">{title || t('common.comingSoon')}</h2>
+      <p className="text-sm mt-2">{t('common.underConstruction')}</p>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [data, setData] = useState<FactoryData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -52,7 +75,6 @@ const App: React.FC = () => {
         setError(null);
       } catch (err) {
         console.error("Failed to load from Firebase:", err);
-        // Fallback to local default if Firebase fails (e.g. no config)
         setData(getLocalDefault());
         setError("Failed to connect to cloud database. Using local demo data.");
       } finally {
@@ -66,15 +88,12 @@ const App: React.FC = () => {
   const updateData = async (newData: FactoryData) => {
     setIsLoading(true);
     try {
-      // Optimistic UI update (update local state immediately)
       setData(newData); 
-      // Sync with Cloud
       await saveFactoryData(newData);
       setError(null);
     } catch (err) {
       console.error("Failed to save to Firebase:", err);
       setError("Failed to save changes to the cloud.");
-      // Optional: Rollback state here if strict consistency is needed
     } finally {
       setIsLoading(false);
     }
@@ -104,7 +123,6 @@ const App: React.FC = () => {
     );
   }
 
-  // If failed completely and no fallback data
   if (!data) return <div className="flex items-center justify-center h-screen text-red-500">System Error: Could not load data.</div>;
 
   return (
@@ -115,17 +133,43 @@ const App: React.FC = () => {
             <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
+                
+                {/* Overview */}
                 <Route path="dashboard" element={<Dashboard />} />
+                
+                {/* Sales */}
+                <Route path="customers" element={<Customers />} />
                 <Route path="orders" element={<Orders />} />
+
+                {/* Production */}
+                <Route path="machine-status" element={<Maintenance view="status" />} />
+                <Route path="kanban" element={<Kanban />} />
                 <Route path="production" element={<Production />} />
-                <Route path="inventory" element={<Inventory />} />
+                
+                {/* Warehouse & QC */}
                 <Route path="qc" element={<QC />} />
+                <Route path="inventory" element={<Inventory />} />
+                <Route path="raw-materials" element={<Inventory defaultTab="raw" />} />
+                <Route path="products" element={<Products />} />
+                <Route path="shipping" element={<Shipping />} />
+                <Route path="complaints" element={<ComingSoon title="Customer Complaints" />} />
+
+                {/* Management */}
                 <Route path="employees" element={<Employees />} />
+                <Route path="maintenance" element={<Maintenance view="maintenance" />} />
+                <Route path="purchasing" element={<ComingSoon title="Purchasing" />} />
+                
+                {/* Analytics Group */}
+                <Route path="analytics-material" element={<Analytics mode="material" />} />
+                <Route path="analytics-cost" element={<Analytics mode="cost" />} />
+                <Route path="analytics-profit" element={<Analytics mode="profit" />} />
+                <Route path="oee" element={<Analytics mode="oee" />} />
+                
+                <Route path="reports" element={<ComingSoon title="Reports" />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
             </Routes>
             
-            {/* Global Error Toast (Simple implementation) */}
             {error && (
               <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg z-50 flex items-center gap-2">
                 <span>⚠️ {error}</span>

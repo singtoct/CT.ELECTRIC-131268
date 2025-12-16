@@ -51,7 +51,7 @@ const Employees: React.FC = () => {
                             <td className="px-6 py-4 font-mono text-slate-600">
                                 <div className="flex items-center gap-1">
                                     <DollarSign size={12} />
-                                    {emp.dailyWage.toFixed(2)}
+                                    {(emp.dailyWage || 0).toFixed(2)}
                                 </div>
                             </td>
                             <td className="px-6 py-4 text-slate-500">
