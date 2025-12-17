@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, enableIndexedDbPersistence } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
 import { FactoryData } from "../types";
 import { getFactoryData as getDefaultData } from "./database";
@@ -20,13 +20,25 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const analytics = getAnalytics(app); 
 
+// Enable Offline Persistence
+// This allows the app to work if the network is flaky or offline by using cached data.
+enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code == 'failed-precondition') {
+        // Multiple tabs open, persistence can only be enabled in one tab at a a time.
+        console.warn('Firebase persistence failed: Multiple tabs open');
+    } else if (err.code == 'unimplemented') {
+        // The current browser does not support all of the features required to enable persistence
+        console.warn('Firebase persistence not supported in this browser');
+    }
+});
+
 // Collection 'factory' -> Document 'main_data'
 const DATA_DOC_REF = doc(db, "factory", "main_data");
 
 // --- Helper: Deep Sanitize Data ---
 // This function recursively copies the object, removing circular references,
 // DOM nodes, and non-serializable objects.
-const sanitizeData = (input: any, stack = new Set<any>()): any => {
+export const sanitizeData = (input: any, stack = new Set<any>()): any => {
   // 1. Null / Undefined / Primitives
   if (input === null || input === undefined || typeof input !== 'object') {
     return input;
@@ -108,7 +120,9 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
     
     if (docSnap.exists()) {
       console.log("✅ Document data loaded from Firebase!");
-      return docSnap.data() as FactoryData;
+      const rawData = docSnap.data();
+      // Sanitize data on fetch to ensure no internal objects leak into the app state
+      return sanitizeData(rawData) as FactoryData;
     } else {
       console.log("⚠️ No cloud data found! Initializing with default data...");
       const defaultData = getDefaultData();
@@ -116,7 +130,8 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
       return defaultData;
     }
   } catch (error) {
-    console.error("❌ Error getting document:", error);
+    console.error("❌ Error getting document (Offline or Permission):", error);
+    // Re-throw to let App.tsx handle fallback to local data
     throw error;
   }
 };

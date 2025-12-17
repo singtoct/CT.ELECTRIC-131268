@@ -19,7 +19,7 @@ import ProductionOrderDocs from './pages/ProductionOrderDocs'; // IMPORT NEW PAG
 
 import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
-import { fetchFactoryData, saveFactoryData } from './services/firebase';
+import { fetchFactoryData, saveFactoryData, sanitizeData } from './services/firebase';
 import { getFactoryData as getLocalDefault } from './services/database';
 import { Construction } from 'lucide-react';
 
@@ -93,8 +93,13 @@ const App: React.FC = () => {
   const updateData = async (newData: FactoryData) => {
     setIsLoading(true);
     try {
-      setData(newData); 
-      await saveFactoryData(newData);
+      // CRITICAL: Sanitize data BEFORE setting state.
+      // This prevents circular references or non-serializable objects (like Events/DOM nodes) 
+      // from entering the app state, which would crash JSON.stringify() in downstream components.
+      const cleanData = sanitizeData(newData) as FactoryData;
+      
+      setData(cleanData); 
+      await saveFactoryData(cleanData);
       setError(null);
     } catch (err) {
       console.error("Failed to save to Firebase:", err);

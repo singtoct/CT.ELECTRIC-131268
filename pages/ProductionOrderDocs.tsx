@@ -333,7 +333,7 @@ const ProductionOrderDocs: React.FC = () => {
                 {/* Print Area - The paper sheet */}
                 <div className="bg-white shadow-xl mx-auto print:shadow-none print:w-full print:max-w-none print:m-0 print:absolute print:top-0 print:left-0" style={{ width: '210mm', minHeight: '297mm', padding: '15mm 20mm' }}>
                     {/* Header */}
-                    <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-slate-900">
+                    <div className="flex justify-between items-start mb-6 pb-4 border-b-2 border-slate-900">
                         <div className="flex items-start gap-4">
                             {/* Logo */}
                             {factory_settings.companyInfo.logoUrl && (
@@ -361,7 +361,7 @@ const ProductionOrderDocs: React.FC = () => {
                     </div>
 
                     {/* Customer Info Box */}
-                    <div className="mb-8 p-4 rounded-lg border border-slate-200 bg-slate-50 print:bg-white print:border-slate-300">
+                    <div className="mb-6 p-4 rounded-lg border border-slate-200 bg-slate-50 print:bg-white print:border-slate-300">
                         <div className="text-sm">
                             <span className="font-bold text-slate-700 uppercase tracking-wider block mb-1">{t('po.customer')}</span>
                             <span className="text-slate-900 text-lg font-medium">
@@ -370,33 +370,34 @@ const ProductionOrderDocs: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Items Table */}
+                    {/* Items Table - COMPACT FOR PRINT */}
                     <div className="mb-8">
                         <table className="w-full text-sm border-collapse">
                             <thead>
                                 <tr className="bg-slate-100 text-slate-700 print:bg-slate-100 print:text-black">
-                                    <th className="border border-slate-300 px-3 py-2 text-center w-12 font-bold">#</th>
-                                    <th className="border border-slate-300 px-3 py-2 text-left font-bold">{t('inv.itemName')}</th>
-                                    <th className="border border-slate-300 px-3 py-2 text-center w-28 font-bold">{t('orders.dueDate')}</th>
-                                    <th className="border border-slate-300 px-3 py-2 text-right w-24 font-bold">{t('orders.quantity')}</th>
-                                    <th className="border border-slate-300 px-3 py-2 text-center w-20 font-bold">{t('inv.unit')}</th>
-                                    <th className="border border-slate-300 px-3 py-2 text-left w-32 font-bold">{t('po.note')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-12 text-xs font-bold uppercase tracking-wider">#</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-left text-xs font-bold uppercase tracking-wider">{t('inv.itemName')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-28 text-xs font-bold uppercase tracking-wider">{t('orders.dueDate')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-right w-24 text-xs font-bold uppercase tracking-wider">{t('orders.quantity')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-20 text-xs font-bold uppercase tracking-wider">{t('inv.unit')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-left w-32 text-xs font-bold uppercase tracking-wider">{t('po.note')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {currentDoc.items.map((item, idx) => (
                                     <tr key={item.id} className="print:text-black">
-                                        <td className="border border-slate-300 px-3 py-3 text-center text-slate-500">{idx + 1}</td>
-                                        <td className="border border-slate-300 px-3 py-3 font-semibold text-slate-800">{item.productName}</td>
-                                        <td className="border border-slate-300 px-3 py-3 text-center text-xs">{item.dueDate}</td>
-                                        <td className="border border-slate-300 px-3 py-3 text-right font-bold font-mono text-slate-900">{item.quantity.toLocaleString()}</td>
-                                        <td className="border border-slate-300 px-3 py-3 text-center text-xs text-slate-600">{item.unit}</td>
-                                        <td className="border border-slate-300 px-3 py-3 text-xs italic text-slate-500">{item.note}</td>
+                                        <td className="border border-slate-300 px-2 py-2 text-center text-slate-500 text-xs">{idx + 1}</td>
+                                        {/* Reduced font size and weight for items: font-medium, print:text-xs */}
+                                        <td className="border border-slate-300 px-2 py-2 font-medium text-slate-800 text-sm print:text-xs align-top">{item.productName}</td>
+                                        <td className="border border-slate-300 px-2 py-2 text-center text-xs align-top">{item.dueDate}</td>
+                                        <td className="border border-slate-300 px-2 py-2 text-right font-bold font-mono text-slate-900 text-sm print:text-xs align-top">{item.quantity.toLocaleString()}</td>
+                                        <td className="border border-slate-300 px-2 py-2 text-center text-xs text-slate-600 align-top">{item.unit}</td>
+                                        <td className="border border-slate-300 px-2 py-2 text-xs italic text-slate-500 align-top">{item.note}</td>
                                     </tr>
                                 ))}
                                 {/* Empty Rows for consistency */}
-                                {Array.from({ length: Math.max(0, 8 - currentDoc.items.length) }).map((_, idx) => (
-                                    <tr key={`empty-${idx}`} className="h-10">
+                                {Array.from({ length: Math.max(0, 10 - currentDoc.items.length) }).map((_, idx) => (
+                                    <tr key={`empty-${idx}`} className="h-8">
                                         <td className="border border-slate-300"></td>
                                         <td className="border border-slate-300"></td>
                                         <td className="border border-slate-300"></td>
@@ -411,37 +412,36 @@ const ProductionOrderDocs: React.FC = () => {
 
                     {/* Footer / Signatures */}
                     <div className="mt-auto">
-                        <div className="grid grid-cols-3 gap-8 pt-10">
+                        <div className="grid grid-cols-3 gap-8 pt-6">
                             {/* Ordered By */}
                             <div className="text-center">
-                                <div className="h-24 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
-                                     {/* Space for Signature */}
+                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
                                      <span className="text-[10px] text-slate-300 print:hidden">Signature</span>
                                 </div>
-                                <p className="text-sm font-bold text-slate-800 uppercase">{t('po.sign.ordered')}</p>
-                                <div className="mt-2 text-xs text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
+                                <p className="text-xs font-bold text-slate-800 uppercase">{t('po.sign.ordered')}</p>
+                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
                             </div>
                             
                             {/* Approved By */}
                             <div className="text-center">
-                                <div className="h-24 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
+                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
                                 </div>
-                                <p className="text-sm font-bold text-slate-800 uppercase">{t('po.sign.approved')}</p>
-                                <div className="mt-2 text-xs text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
+                                <p className="text-xs font-bold text-slate-800 uppercase">{t('po.sign.approved')}</p>
+                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
                             </div>
 
                             {/* Received By */}
                             <div className="text-center">
-                                <div className="h-24 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
+                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
                                 </div>
-                                <p className="text-sm font-bold text-slate-800 uppercase">{t('po.sign.received')}</p>
-                                <div className="mt-2 text-xs text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
+                                <p className="text-xs font-bold text-slate-800 uppercase">{t('po.sign.received')}</p>
+                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
                             </div>
                         </div>
                     </div>
                     
                     {/* System Footer */}
-                    <div className="mt-12 pt-4 border-t border-slate-200 text-[10px] text-slate-400 flex justify-between items-center print:text-slate-600 print:border-black">
+                    <div className="mt-8 pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex justify-between items-center print:text-slate-600 print:border-black">
                         <span>Document ID: {currentDoc.id}</span>
                         <span>Generated by Factory OS • {new Date().toLocaleString('th-TH')}</span>
                     </div>
