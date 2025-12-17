@@ -1,3 +1,4 @@
+
 import { FactoryData } from '../types';
 
 const rawDataString = `
@@ -40,7 +41,6 @@ const rawDataString = `
       "lotNumber": "LOT-103"
     }
   ],
-  "packing_logs": [],
   "molding_logs": [
     {
       "id": "pkiPaiss3rArSomudDEg",
@@ -159,8 +159,7 @@ export const getFactoryData = (): FactoryData => {
     console.error("Failed to parse factory data:", error);
     return {
       packing_orders: [],
-      packing_logs: [],
-      molding_logs: [],
+      molding_logs: [], // Fixed: removed non-existent packing_logs and ensured molding_logs is present
       packing_inventory: [],
       packing_employees: [],
       factory_machines: [],
@@ -169,6 +168,7 @@ export const getFactoryData = (): FactoryData => {
       factory_products: [],
       production_documents: [],
       factory_settings: {
+        name: 'CT Electric', // Added missing name property
         companyInfo: { name: '', address: '', taxId: '', phone: '', email: '', logoUrl: '' },
         productionConfig: { shifts: [], lowStockThreshold: 0, vatRate: 0, regrindPercentage: 0, workingHoursPerDay: 8 },
         qcRejectReasons: [],

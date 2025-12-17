@@ -1,4 +1,19 @@
 
+export interface BOMItem {
+  materialId: string;
+  materialName: string;
+  quantityPerUnit: number; // e.g., 0.05 kg per 1 product unit
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  standardColor: string;
+  salePrice: number;
+  bom: BOMItem[]; //สูตรการผลิต
+}
+
 export interface PackingOrder {
   id: string;
   name: string;
@@ -8,18 +23,10 @@ export interface PackingOrder {
   dueDate: string;
   stock?: number;
   salePrice: number;
-  status?: string;
+  status?: 'Open' | 'In Progress' | 'Completed' | 'Cancelled';
   quantityDelivered?: number;
   lotNumber?: string;
-}
-
-export interface PackingLog {
-  id: string;
-  date: string;
-  quantity: number;
-  name: string;
-  packerName: string;
-  packingLogId?: string; // Referenced in QC
+  docId?: string; // Link to ProductionDocument
 }
 
 export interface MoldingLog {
@@ -32,14 +39,10 @@ export interface MoldingLog {
   shift: string;
   lotNumber: string;
   date: string;
-  status: string;
+  status: string; // เช่น 'รอฉีด', 'รอประกอบ', 'รอแพ็ค', 'รอ QC', 'เสร็จสิ้น'
   productId: string;
   machine: string;
   quantityProduced: number;
-  hours?: number;
-  machineId?: string;
-  // New Fields for Enhanced Management
-  startTime?: string;
   targetQuantity?: number;
   priority?: number;
 }
@@ -50,90 +53,54 @@ export interface InventoryItem {
   quantity: number;
   unit?: string;
   costPerUnit?: number;
+  reservedQuantity?: number; // ยอดจองผลิต
 }
 
-export interface Employee {
-  id: string;
-  name: string;
-  phone: string;
-  department: string;
-  dailyWage: number;
-  hireDate: string;
-  address: string;
-  status: string;
-  roleId: string;
-  includeInWageCalculation?: boolean;
-}
-
-export interface Machine {
-  id: string;
-  status: string;
-  workingHoursPerDay: number;
-  location: string;
-  name: string;
-  lastStartedAt?: string;
-}
-
-export interface QcEntry {
-  id: string;
-  quantity: number;
-  unit: string;
-  lotNumber: string;
-  reasons: string[];
-  sourceDate: string;
-  qcDate: string;
-  qcInspector: string;
-  productName: string;
-  moldingLogId?: string;
-  packingLogId?: string;
-  status: string;
-  orderId?: string;
-  employeeName: string;
-}
-
-// --- New Settings Interfaces ---
-
-export interface CompanyInfo {
-  name: string;
-  address: string;
-  taxId: string;
-  phone: string;
-  email: string;
-  logoUrl: string;
-}
-
+// Added missing CostItem interface for financial settings
 export interface CostItem {
   id: string;
   name: string;
   value: number;
-  unit?: string; // e.g., /month, /year
+  unit?: string;
 }
 
-export interface ProductionConfig {
-  shifts: string[]; 
-  lowStockThreshold: number; 
-  vatRate: number;
-  regrindPercentage: number; // New
-  workingHoursPerDay: number; // New
+// Added missing Machine interface for production monitoring
+export interface Machine {
+  id: string;
+  name: string;
+  status: string;
+  location: string;
+  workingHoursPerDay: number;
 }
 
 export interface FactorySettings {
-  name?: string; // Legacy
-  companyInfo: CompanyInfo;
-  productionConfig: ProductionConfig;
-  
-  // Dynamic Lists from UI
+  name: string; // Added missing name property
+  companyInfo: {
+    name: string;
+    address: string;
+    taxId: string;
+    phone: string;
+    email: string;
+    logoUrl: string;
+  };
+  productionConfig: {
+    shifts: string[]; 
+    lowStockThreshold: number; 
+    vatRate: number;
+    regrindPercentage: number;
+    workingHoursPerDay: number;
+  };
   qcRejectReasons: string[];
   machineStatuses: string[];
-  productionSteps: string[];
+  productionSteps: string[]; // ['รอฉีด', 'รอประกอบ', 'รอแพ็ค', 'รอ QC', 'เสร็จสิ้น']
   departments: string[];
-  overheadCosts: CostItem[];
-  machineDepreciation: CostItem[];
+  overheadCosts: CostItem[]; // Updated from any[] to use CostItem
+  machineDepreciation: CostItem[]; // Updated from any[] to use CostItem
 }
 
-// --- NEW: Production Document Interface ---
 export interface ProductionDocumentItem {
     id: string;
+    productId: string; // Link to Product
     productName: string;
     quantity: number;
     unit: string;
@@ -143,26 +110,25 @@ export interface ProductionDocumentItem {
 
 export interface ProductionDocument {
     id: string;
-    docNumber: string; // e.g., PO-2025-001
+    docNumber: string;
     date: string;
     customerName: string;
-    status: 'Draft' | 'Approved' | 'In Progress' | 'Completed';
+    status: 'Draft' | 'Material Checking' | 'Approved' | 'In Progress' | 'Completed';
     items: ProductionDocumentItem[];
     createdBy: string;
-    approvedBy?: string; // Boss signature name
     note?: string;
+    materialShortage?: boolean; // บอกว่าวัตถุดิบพอไหม
 }
 
 export interface FactoryData {
   packing_orders: PackingOrder[];
-  packing_logs: PackingLog[];
   molding_logs: MoldingLog[];
   packing_inventory: InventoryItem[];
-  packing_employees: Employee[];
-  factory_machines: Machine[];
-  packing_qc_entries: QcEntry[];
+  factory_machines: Machine[]; // Updated from any[] to use Machine
+  packing_employees: any[];
+  packing_qc_entries: any[];
   packing_raw_materials: InventoryItem[];
-  factory_products: any[];
+  factory_products: Product[];
   factory_settings: FactorySettings;
-  production_documents: ProductionDocument[]; // New Collection
+  production_documents: ProductionDocument[];
 }
