@@ -475,7 +475,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                             <div>
                                 <label className="block text-sm font-bold text-slate-700 mb-1">{t('mach.operator')}</label>
                                 <select 
-                                    className="w-full border border-slate-300 bg-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                                     value={formData.operator}
                                     onChange={(e) => setFormData({...formData, operator: e.target.value})}
                                 >
@@ -514,7 +514,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                 <div className="col-span-2 md:col-span-1">
                                     <label className="block text-xs font-bold text-slate-500 mb-1">Operator</label>
                                     <select 
-                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                        className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
                                         value={formData.operator}
                                         onChange={(e) => setFormData({...formData, operator: e.target.value})}
                                     >
@@ -530,7 +530,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                     <div className="relative">
                                         <input 
                                             type="text" 
-                                            className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
                                             value={formData.lotNumber}
                                             onChange={(e) => setFormData({...formData, lotNumber: e.target.value})}
                                         />
@@ -542,7 +542,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                     <label className="block text-xs font-bold text-slate-500 mb-1">Target Quantity</label>
                                     <input 
                                         type="number" 
-                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                        className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
                                         value={formData.targetQuantity}
                                         onChange={(e) => setFormData({...formData, targetQuantity: e.target.value})}
                                     />
@@ -563,7 +563,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                     <div className="relative">
                                         <input 
                                             type="text" 
-                                            className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
                                             value={formData.startTime}
                                             onChange={(e) => setFormData({...formData, startTime: e.target.value})}
                                             placeholder="YYYY-MM-DD HH:mm"
@@ -576,7 +576,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                     <label className="block text-xs font-bold text-slate-500 mb-1">Priority</label>
                                     <input 
                                         type="number" 
-                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                        className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
                                         value={formData.priority}
                                         onChange={(e) => setFormData({...formData, priority: e.target.value})}
                                         placeholder="10"
@@ -592,7 +592,7 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                 <label className="block text-sm font-bold text-slate-700 mb-2">Move to Another Machine</label>
                                 <div className="relative">
                                     <select 
-                                        className="w-full border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 appearance-none bg-white"
+                                        className="w-full border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 appearance-none bg-white text-slate-900"
                                         value={formData.moveToMachine}
                                         onChange={(e) => setFormData({...formData, moveToMachine: e.target.value})}
                                     >

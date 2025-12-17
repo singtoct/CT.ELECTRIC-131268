@@ -65,7 +65,7 @@ const Inventory: React.FC<InventoryProps> = ({ defaultTab = 'finished' }) => {
             <input 
               type="text" 
               placeholder={activeTab === 'finished' ? t('inv.searchFinished') : t('inv.searchRaw')} 
-              className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full"
+              className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full bg-white text-slate-900"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

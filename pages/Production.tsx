@@ -381,7 +381,7 @@ const Production: React.FC = () => {
                                 type="date" 
                                 value={editingLog.date}
                                 onChange={e => setEditingLog({...editingLog, date: e.target.value})}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                                className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
                             />
                         </div>
                         <div>
@@ -389,7 +389,7 @@ const Production: React.FC = () => {
                             <select 
                                 value={editingLog.shift}
                                 onChange={e => setEditingLog({...editingLog, shift: e.target.value})}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                             >
                                 <option value="เช้า">เช้า (Day)</option>
                                 <option value="ดึก">ดึก (Night)</option>
@@ -403,7 +403,7 @@ const Production: React.FC = () => {
                         <select 
                             value={editingLog.machine}
                             onChange={e => setEditingLog({...editingLog, machine: e.target.value})}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                         >
                             {factory_machines.map(m => (
                                 <option key={m.id} value={m.name}>{m.name} ({m.location})</option>
@@ -417,7 +417,7 @@ const Production: React.FC = () => {
                         <select 
                             value={editingLog.orderId || ''}
                             onChange={handleOrderSelectChange}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                         >
                             <option value="">-- Select Order --</option>
                             {packing_orders.filter(o => o.status !== 'Cancelled').map(o => (
@@ -435,7 +435,7 @@ const Production: React.FC = () => {
                             type="number" 
                             value={editingLog.quantityProduced}
                             onChange={e => setEditingLog({...editingLog, quantityProduced: parseInt(e.target.value) || 0})}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xl font-bold text-blue-600 focus:ring-2 focus:ring-primary-500 outline-none"
+                            className="w-full border border-slate-300 bg-white rounded-lg px-3 py-2 text-xl font-bold text-blue-600 focus:ring-2 focus:ring-primary-500 outline-none"
                         />
                     </div>
 
@@ -445,7 +445,7 @@ const Production: React.FC = () => {
                          <select 
                             value={editingLog.status}
                             onChange={e => setEditingLog({...editingLog, status: e.target.value})}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                         >
                             <option value="In Progress">In Progress (กำลังผลิต)</option>
                             <option value="Completed">Completed (เสร็จสิ้น)</option>

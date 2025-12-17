@@ -42,9 +42,14 @@ const ProductionOrderDocs: React.FC = () => {
     };
 
     const handleEdit = (doc: ProductionDocument) => {
-        // Deep copy to prevent mutation of original data until saved
-        setCurrentDoc(JSON.parse(JSON.stringify(doc))); 
-        setView('create');
+        try {
+            // Deep copy to prevent mutation of original data until saved
+            setCurrentDoc(JSON.parse(JSON.stringify(doc))); 
+            setView('create');
+        } catch (e) {
+            console.error("Failed to edit document (Data Error):", e);
+            alert("Error: This document contains invalid data and cannot be edited.");
+        }
     };
 
     const handleView = (doc: ProductionDocument) => {
@@ -90,6 +95,19 @@ const ProductionOrderDocs: React.FC = () => {
         setCurrentDoc({ ...currentDoc, items: newItems });
     };
 
+    // Helper: Dynamic Font Size for Print
+    // Returns tailwind classes based on text length to force fit on single line
+    const getPrintTextSize = (text: string) => {
+        if (!text) return 'text-sm';
+        const len = text.length;
+        // Aggressive scaling for long text
+        if (len > 55) return 'text-[9px] leading-tight tracking-tight'; 
+        if (len > 45) return 'text-[10px] leading-tight tracking-tight'; 
+        if (len > 35) return 'text-[11px] leading-tight'; 
+        if (len > 25) return 'text-xs leading-snug'; 
+        return 'text-sm'; // Standard
+    };
+
     // --- RENDER SECTIONS ---
 
     // 1. List View
@@ -115,7 +133,7 @@ const ProductionOrderDocs: React.FC = () => {
                     <input 
                         type="text" 
                         placeholder={t('orders.search')}
-                        className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full"
+                        className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-full bg-white text-slate-900"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />
@@ -192,7 +210,7 @@ const ProductionOrderDocs: React.FC = () => {
                                 type="text" 
                                 value={currentDoc.docNumber}
                                 onChange={e => setCurrentDoc({...currentDoc, docNumber: e.target.value})}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                             />
                         </div>
                         <div>
@@ -201,7 +219,7 @@ const ProductionOrderDocs: React.FC = () => {
                                 type="date" 
                                 value={currentDoc.date}
                                 onChange={e => setCurrentDoc({...currentDoc, date: e.target.value})}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                             />
                         </div>
                         <div>
@@ -211,7 +229,7 @@ const ProductionOrderDocs: React.FC = () => {
                                 value={currentDoc.customerName}
                                 onChange={e => setCurrentDoc({...currentDoc, customerName: e.target.value})}
                                 placeholder="Customer Name or Dept."
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                             />
                         </div>
                     </div>
@@ -244,7 +262,7 @@ const ProductionOrderDocs: React.FC = () => {
                                             placeholder="Item Description..."
                                             value={item.productName}
                                             onChange={e => updateItem(idx, 'productName', e.target.value)}
-                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none transition-colors"
+                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-primary-500 outline-none transition-colors"
                                         />
                                     </div>
                                     <div className="w-full md:w-24">
@@ -253,7 +271,7 @@ const ProductionOrderDocs: React.FC = () => {
                                             placeholder="0"
                                             value={item.quantity || ''}
                                             onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-sm text-right font-mono focus:ring-2 focus:ring-primary-500 outline-none"
+                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-sm text-right font-mono text-slate-900 focus:ring-2 focus:ring-primary-500 outline-none"
                                         />
                                     </div>
                                     <div className="w-full md:w-20">
@@ -262,7 +280,7 @@ const ProductionOrderDocs: React.FC = () => {
                                             placeholder="Unit"
                                             value={item.unit}
                                             onChange={e => updateItem(idx, 'unit', e.target.value)}
-                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-sm text-center focus:ring-2 focus:ring-primary-500 outline-none"
+                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-sm text-center text-slate-900 focus:ring-2 focus:ring-primary-500 outline-none"
                                         />
                                     </div>
                                     <div className="w-full md:w-32">
@@ -270,7 +288,7 @@ const ProductionOrderDocs: React.FC = () => {
                                             type="date" 
                                             value={item.dueDate}
                                             onChange={e => updateItem(idx, 'dueDate', e.target.value)}
-                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-xs text-center focus:ring-2 focus:ring-primary-500 outline-none"
+                                            className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded px-3 py-2 text-xs text-center text-slate-900 focus:ring-2 focus:ring-primary-500 outline-none"
                                         />
                                     </div>
                                     <button 
@@ -315,8 +333,45 @@ const ProductionOrderDocs: React.FC = () => {
     if (view === 'view' && currentDoc) {
         return (
             <div className="flex flex-col h-full bg-slate-50 md:bg-transparent">
+                {/* INJECTED PRINT STYLES */}
+                <style type="text/css" media="print">
+                {`
+                  @page { size: auto; margin: 0mm; }
+                  body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                  .print-hidden { display: none !important; }
+                  .print-container {
+                    position: absolute !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                    width: 210mm !important;
+                    min-height: 297mm !important;
+                    margin: 0 !important;
+                    padding: 15mm 20mm !important;
+                    background: white !important;
+                    box-shadow: none !important;
+                    z-index: 9999 !important;
+                  }
+                  /* Force Sharp Borders */
+                  table { border-collapse: collapse !important; width: 100% !important; }
+                  th, td { 
+                      border: 1px solid #000 !important; 
+                      color: #000 !important; 
+                  }
+                  /* Header Background */
+                  thead tr th {
+                    background-color: #f1f5f9 !important; /* slate-100 */
+                    font-weight: 700 !important;
+                    text-transform: uppercase !important;
+                  }
+                  /* Font Consistency */
+                  * { font-family: 'Inter', sans-serif !important; }
+                  /* Hide unwanted layout elements if they leak */
+                  nav, aside, header { display: none !important; }
+                `}
+                </style>
+
                 {/* Toolbar (Hidden when printing) */}
-                <div className="flex items-center justify-between mb-6 print:hidden">
+                <div className="flex items-center justify-between mb-6 print-hidden">
                     <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-sm font-medium">
                         <ChevronRight className="rotate-180" size={16} /> Back
                     </button>
@@ -331,40 +386,41 @@ const ProductionOrderDocs: React.FC = () => {
                 </div>
 
                 {/* Print Area - The paper sheet */}
-                <div className="bg-white shadow-xl mx-auto print:shadow-none print:w-full print:max-w-none print:m-0 print:absolute print:top-0 print:left-0" style={{ width: '210mm', minHeight: '297mm', padding: '15mm 20mm' }}>
+                {/* Added 'print-container' class to hook into the styles above */}
+                <div className="bg-white shadow-xl mx-auto print-container" style={{ width: '210mm', minHeight: '297mm', padding: '15mm 20mm' }}>
                     {/* Header */}
-                    <div className="flex justify-between items-start mb-6 pb-4 border-b-2 border-slate-900">
+                    <div className="flex justify-between items-start mb-6 pb-4 border-b-2 border-slate-900" style={{ borderColor: '#000' }}>
                         <div className="flex items-start gap-4">
                             {/* Logo */}
                             {factory_settings.companyInfo.logoUrl && (
                                 <img src={factory_settings.companyInfo.logoUrl} alt="Logo" className="h-16 w-32 object-contain object-left" />
                             )}
                             <div>
-                                <h1 className="text-xl font-bold text-slate-900 uppercase tracking-wide leading-tight">{factory_settings.companyInfo.name}</h1>
-                                <p className="text-xs text-slate-500 max-w-[300px] leading-relaxed mt-1">
+                                <h1 className="text-xl font-bold text-slate-900 uppercase tracking-wide leading-tight" style={{ color: '#000' }}>{factory_settings.companyInfo.name}</h1>
+                                <p className="text-xs text-slate-500 max-w-[300px] leading-relaxed mt-1" style={{ color: '#444' }}>
                                     {factory_settings.companyInfo.address}<br/>
                                     <strong>Tax ID:</strong> {factory_settings.companyInfo.taxId} | <strong>Tel:</strong> {factory_settings.companyInfo.phone}
                                 </p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <h2 className="text-3xl font-bold text-slate-800 mb-2 tracking-tight">{t('po.docHeader')}</h2>
+                            <h2 className="text-3xl font-bold text-slate-800 mb-2 tracking-tight" style={{ color: '#000' }}>{t('po.docHeader')}</h2>
                             <div className="text-sm">
-                                <span className="font-bold text-slate-600 mr-2">{t('po.docNo')}:</span>
-                                <span className="font-mono font-bold text-slate-900 text-lg">{currentDoc.docNumber}</span>
+                                <span className="font-bold text-slate-600 mr-2" style={{ color: '#000' }}>{t('po.docNo')}:</span>
+                                <span className="font-mono font-bold text-slate-900 text-lg" style={{ color: '#000' }}>{currentDoc.docNumber}</span>
                             </div>
                             <div className="text-sm mt-1">
-                                <span className="font-bold text-slate-600 mr-2">{t('po.date')}:</span>
-                                <span>{new Date(currentDoc.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric'})}</span>
+                                <span className="font-bold text-slate-600 mr-2" style={{ color: '#000' }}>{t('po.date')}:</span>
+                                <span style={{ color: '#000' }}>{new Date(currentDoc.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric'})}</span>
                             </div>
                         </div>
                     </div>
 
                     {/* Customer Info Box */}
-                    <div className="mb-6 p-4 rounded-lg border border-slate-200 bg-slate-50 print:bg-white print:border-slate-300">
+                    <div className="mb-6 p-4 rounded-lg border border-slate-200 bg-slate-50 print:bg-white print:border-black" style={{ borderColor: '#000', backgroundColor: '#fff' }}>
                         <div className="text-sm">
-                            <span className="font-bold text-slate-700 uppercase tracking-wider block mb-1">{t('po.customer')}</span>
-                            <span className="text-slate-900 text-lg font-medium">
+                            <span className="font-bold text-slate-700 uppercase tracking-wider block mb-1" style={{ color: '#000' }}>{t('po.customer')}</span>
+                            <span className="text-slate-900 text-lg font-medium" style={{ color: '#000' }}>
                                 {currentDoc.customerName}
                             </span>
                         </div>
@@ -372,32 +428,35 @@ const ProductionOrderDocs: React.FC = () => {
 
                     {/* Items Table - COMPACT FOR PRINT */}
                     <div className="mb-8">
-                        <table className="w-full text-sm border-collapse">
+                        <table className="w-full text-sm border-collapse table-fixed">
                             <thead>
-                                <tr className="bg-slate-100 text-slate-700 print:bg-slate-100 print:text-black">
-                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-12 text-xs font-bold uppercase tracking-wider">#</th>
+                                <tr className="bg-slate-100 text-slate-700">
+                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-10 text-xs font-bold uppercase tracking-wider">#</th>
+                                    {/* Expanded width for Item Name by reducing fixed width constraints on other columns */}
                                     <th className="border border-slate-300 px-2 py-1.5 text-left text-xs font-bold uppercase tracking-wider">{t('inv.itemName')}</th>
-                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-28 text-xs font-bold uppercase tracking-wider">{t('orders.dueDate')}</th>
-                                    <th className="border border-slate-300 px-2 py-1.5 text-right w-24 text-xs font-bold uppercase tracking-wider">{t('orders.quantity')}</th>
-                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-20 text-xs font-bold uppercase tracking-wider">{t('inv.unit')}</th>
-                                    <th className="border border-slate-300 px-2 py-1.5 text-left w-32 text-xs font-bold uppercase tracking-wider">{t('po.note')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-20 text-xs font-bold uppercase tracking-wider">{t('orders.dueDate')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-right w-20 text-xs font-bold uppercase tracking-wider">{t('orders.quantity')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-center w-14 text-xs font-bold uppercase tracking-wider">{t('inv.unit')}</th>
+                                    <th className="border border-slate-300 px-2 py-1.5 text-left w-20 text-xs font-bold uppercase tracking-wider">{t('po.note')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {currentDoc.items.map((item, idx) => (
-                                    <tr key={item.id} className="print:text-black">
-                                        <td className="border border-slate-300 px-2 py-2 text-center text-slate-500 text-xs">{idx + 1}</td>
-                                        {/* Reduced font size and weight for items: font-medium, print:text-xs */}
-                                        <td className="border border-slate-300 px-2 py-2 font-medium text-slate-800 text-sm print:text-xs align-top">{item.productName}</td>
-                                        <td className="border border-slate-300 px-2 py-2 text-center text-xs align-top">{item.dueDate}</td>
-                                        <td className="border border-slate-300 px-2 py-2 text-right font-bold font-mono text-slate-900 text-sm print:text-xs align-top">{item.quantity.toLocaleString()}</td>
-                                        <td className="border border-slate-300 px-2 py-2 text-center text-xs text-slate-600 align-top">{item.unit}</td>
-                                        <td className="border border-slate-300 px-2 py-2 text-xs italic text-slate-500 align-top">{item.note}</td>
+                                    <tr key={item.id} className="h-9">
+                                        <td className="border border-slate-300 px-2 text-center text-slate-500 text-xs align-middle">{idx + 1}</td>
+                                        {/* Dynamic Font Scaling + No Wrap + Middle Align */}
+                                        <td className={`border border-slate-300 px-2 font-medium text-slate-800 align-middle whitespace-nowrap overflow-hidden text-ellipsis ${getPrintTextSize(item.productName)}`}>
+                                            {item.productName}
+                                        </td>
+                                        <td className="border border-slate-300 px-2 text-center text-xs align-middle">{item.dueDate}</td>
+                                        <td className="border border-slate-300 px-2 text-right font-bold font-mono text-slate-900 text-sm print:text-xs align-middle">{item.quantity.toLocaleString()}</td>
+                                        <td className="border border-slate-300 px-2 text-center text-xs text-slate-600 align-middle">{item.unit}</td>
+                                        <td className="border border-slate-300 px-2 text-xs italic text-slate-500 align-middle">{item.note}</td>
                                     </tr>
                                 ))}
                                 {/* Empty Rows for consistency */}
                                 {Array.from({ length: Math.max(0, 10 - currentDoc.items.length) }).map((_, idx) => (
-                                    <tr key={`empty-${idx}`} className="h-8">
+                                    <tr key={`empty-${idx}`} className="h-9">
                                         <td className="border border-slate-300"></td>
                                         <td className="border border-slate-300"></td>
                                         <td className="border border-slate-300"></td>
@@ -415,33 +474,33 @@ const ProductionOrderDocs: React.FC = () => {
                         <div className="grid grid-cols-3 gap-8 pt-6">
                             {/* Ordered By */}
                             <div className="text-center">
-                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
-                                     <span className="text-[10px] text-slate-300 print:hidden">Signature</span>
+                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded flex flex-col justify-end pb-2 print:border-black" style={{borderColor: '#ccc'}}>
+                                     <span className="text-[10px] text-slate-300 print-hidden">Signature</span>
                                 </div>
-                                <p className="text-xs font-bold text-slate-800 uppercase">{t('po.sign.ordered')}</p>
-                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
+                                <p className="text-xs font-bold text-slate-800 uppercase" style={{color: '#000'}}>{t('po.sign.ordered')}</p>
+                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1" style={{color: '#555', borderColor: '#000'}}>Date: ____/____/____</div>
                             </div>
                             
                             {/* Approved By */}
                             <div className="text-center">
-                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
+                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded flex flex-col justify-end pb-2 print:border-black" style={{borderColor: '#ccc'}}>
                                 </div>
-                                <p className="text-xs font-bold text-slate-800 uppercase">{t('po.sign.approved')}</p>
-                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
+                                <p className="text-xs font-bold text-slate-800 uppercase" style={{color: '#000'}}>{t('po.sign.approved')}</p>
+                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1" style={{color: '#555', borderColor: '#000'}}>Date: ____/____/____</div>
                             </div>
 
                             {/* Received By */}
                             <div className="text-center">
-                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded print:bg-transparent print:border-black flex flex-col justify-end pb-2">
+                                <div className="h-20 border border-slate-300 bg-slate-50 mb-2 rounded flex flex-col justify-end pb-2 print:border-black" style={{borderColor: '#ccc'}}>
                                 </div>
-                                <p className="text-xs font-bold text-slate-800 uppercase">{t('po.sign.received')}</p>
-                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1">Date: ____/____/____</div>
+                                <p className="text-xs font-bold text-slate-800 uppercase" style={{color: '#000'}}>{t('po.sign.received')}</p>
+                                <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-300 inline-block px-4 pt-1" style={{color: '#555', borderColor: '#000'}}>Date: ____/____/____</div>
                             </div>
                         </div>
                     </div>
                     
                     {/* System Footer */}
-                    <div className="mt-8 pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex justify-between items-center print:text-slate-600 print:border-black">
+                    <div className="mt-8 pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex justify-between items-center print:border-black" style={{color: '#666'}}>
                         <span>Document ID: {currentDoc.id}</span>
                         <span>Generated by Factory OS • {new Date().toLocaleString('th-TH')}</span>
                     </div>

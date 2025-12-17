@@ -55,7 +55,7 @@ const StringListEditor = ({
                         value={newItem}
                         onChange={(e) => setNewItem(e.target.value)}
                         placeholder={placeholder}
-                        className="flex-1 text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="flex-1 text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white text-slate-900"
                         onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                     />
                     <button 
@@ -113,14 +113,14 @@ const CostListEditor = ({
                             value={item.name}
                             onChange={(e) => handleChange(item.id, 'name', e.target.value)}
                             placeholder={t('set.costName')}
-                            className="flex-[2] text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            className="flex-[2] text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white text-slate-900"
                         />
                         <div className="flex-1 relative">
                             <input 
                                 type="number" 
                                 value={item.value}
                                 onChange={(e) => handleChange(item.id, 'value', parseFloat(e.target.value) || 0)}
-                                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-right pr-2"
+                                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-right pr-2 bg-white text-slate-900"
                             />
                         </div>
                         <button onClick={() => handleDelete(item.id)} className="text-slate-300 hover:text-red-500 px-1">
@@ -263,7 +263,7 @@ const Settings: React.FC = () => {
                                     type="text" 
                                     value={settings.companyInfo.name} 
                                     onChange={(e) => updateCompany('name', e.target.value)}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                                 />
                             </div>
                             <div>
@@ -272,7 +272,7 @@ const Settings: React.FC = () => {
                                     value={settings.companyInfo.address} 
                                     onChange={(e) => updateCompany('address', e.target.value)}
                                     rows={3}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none"
+                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-white text-slate-900"
                                 />
                             </div>
                             <div>
@@ -281,7 +281,7 @@ const Settings: React.FC = () => {
                                     type="text" 
                                     value={settings.companyInfo.taxId} 
                                     onChange={(e) => updateCompany('taxId', e.target.value)}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                                 />
                             </div>
                             <div className="flex items-center gap-4 border-t border-slate-100 pt-4 mt-2">
@@ -295,7 +295,7 @@ const Settings: React.FC = () => {
                                             type="text" 
                                             value={settings.companyInfo.logoUrl} 
                                             onChange={(e) => updateCompany('logoUrl', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none"
+                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                                         />
                                         <button className="text-xs border border-slate-300 rounded px-2 hover:bg-slate-50">{t('set.changeLogo')}</button>
                                     </div>
@@ -332,7 +332,7 @@ const Settings: React.FC = () => {
                                     type="number" 
                                     value={settings.productionConfig.regrindPercentage}
                                     onChange={(e) => updateProdConfig('regrindPercentage', parseFloat(e.target.value))}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                                 />
                             </div>
                             <div>
@@ -341,7 +341,7 @@ const Settings: React.FC = () => {
                                     type="number" 
                                     value={settings.productionConfig.workingHoursPerDay}
                                     onChange={(e) => updateProdConfig('workingHoursPerDay', parseFloat(e.target.value))}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
                                 />
                             </div>
                         </div>
