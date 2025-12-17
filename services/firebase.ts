@@ -4,7 +4,7 @@ import { getAnalytics } from "firebase/analytics";
 import { FactoryData } from "../types";
 import { getFactoryData as getDefaultData } from "./database";
 
-// --- 1. Firebase Configuration (จากที่คุณให้มา) ---
+// --- 1. Firebase Configuration ---
 const firebaseConfig = {
   apiKey: "AIzaSyBSnnhiHdlsb1ZxgwG_hxAMNrTGYi4ge4Y",
   authDomain: "ct-plastic.firebaseapp.com",
@@ -18,15 +18,90 @@ const firebaseConfig = {
 // --- 2. Initialize Firebase ---
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const analytics = getAnalytics(app); // Initialize Analytics as requested
+const analytics = getAnalytics(app); 
 
-// เราจะเก็บข้อมูลทั้งหมดไว้ใน Collection 'factory' -> Document 'main_data'
-// เปรียบเสมือนไฟล์ JSON ก้อนเดียวบน Cloud
+// Collection 'factory' -> Document 'main_data'
 const DATA_DOC_REF = doc(db, "factory", "main_data");
+
+// --- Helper: Deep Sanitize Data ---
+// This function recursively copies the object, removing circular references,
+// DOM nodes, and non-serializable objects.
+const sanitizeData = (input: any, stack = new Set<any>()): any => {
+  // 1. Null / Undefined / Primitives
+  if (input === null || input === undefined || typeof input !== 'object') {
+    return input;
+  }
+
+  // 2. Dates -> ISO String
+  if (input instanceof Date) {
+    return input.toISOString();
+  }
+
+  // 3. Cycle Detection
+  if (stack.has(input)) {
+    return undefined; 
+  }
+
+  // 4. Block DOM Nodes & React Events explicitly
+  // 'nodeType' checks for DOM elements. 'nativeEvent' checks for React Events.
+  if (input.nodeType || (input.nativeEvent && input.preventDefault)) {
+    return undefined;
+  }
+
+  // 5. Strict Type Checking
+  const tag = Object.prototype.toString.call(input);
+  const isArray = tag === '[object Array]';
+  const isPlainObject = tag === '[object Object]';
+
+  // Reject Map, Set, WeakMap, HTML...Element, Window, etc.
+  if (!isArray && !isPlainObject) {
+    return undefined;
+  }
+
+  // 6. Block Class Instances (objects that are not plain POJOs)
+  if (isPlainObject) {
+    const proto = Object.getPrototypeOf(input);
+    // Only allow objects created via {} or new Object() or Object.create(null)
+    if (proto !== null && proto !== Object.prototype) {
+      return undefined;
+    }
+  }
+
+  stack.add(input);
+  
+  let output: any;
+
+  // 7. Recursion
+  if (isArray) {
+    output = [];
+    for (const item of input) {
+        const sanitized = sanitizeData(item, stack);
+        if (sanitized !== undefined) {
+            output.push(sanitized);
+        }
+    }
+  } else {
+    output = {};
+    for (const key in input) {
+      if (Object.prototype.hasOwnProperty.call(input, key)) {
+        // Skip internal/private properties or hidden firebase props
+        if (key.startsWith('_') || key.startsWith('$') || key === 'constructor' || key === '__proto__') continue;
+
+        const value = sanitizeData(input[key], stack);
+        if (value !== undefined) {
+          output[key] = value;
+        }
+      }
+    }
+  }
+
+  stack.delete(input);
+  return output;
+};
 
 // --- 3. Service Functions ---
 
-// ดึงข้อมูลจาก Cloud
+// Fetch Data
 export const fetchFactoryData = async (): Promise<FactoryData> => {
   try {
     const docSnap = await getDoc(DATA_DOC_REF);
@@ -35,7 +110,6 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
       console.log("✅ Document data loaded from Firebase!");
       return docSnap.data() as FactoryData;
     } else {
-      // ถ้าเปิดเว็บครั้งแรกและยังไม่มีข้อมูลบน Cloud ให้เอาข้อมูลเริ่มต้น (Default) ยิงขึ้นไปเก็บไว้ก่อน
       console.log("⚠️ No cloud data found! Initializing with default data...");
       const defaultData = getDefaultData();
       await saveFactoryData(defaultData);
@@ -43,16 +117,26 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
     }
   } catch (error) {
     console.error("❌ Error getting document:", error);
-    // ถ้าเน็ตหลุด หรือมีปัญหา ให้คืนค่า Default ไปก่อนเพื่อให้เว็บไม่พัง
     throw error;
   }
 };
 
-// บันทึกข้อมูลทับลง Cloud (ใช้เมื่อมีการแก้ข้อมูล หรืออัพโหลด JSON ใหม่)
+// Save Data
 export const saveFactoryData = async (data: FactoryData): Promise<void> => {
   try {
-    // ใช้ setDoc เพื่อเขียนทับ (Overwrite) ข้อมูลทั้งหมด
-    await setDoc(DATA_DOC_REF, data);
+    // Robust Sanitization before saving
+    const cleanData = sanitizeData(data);
+    
+    // Double-check with JSON stringify/parse to ensure absolute purity.
+    let finalData;
+    try {
+      finalData = JSON.parse(JSON.stringify(cleanData));
+    } catch (jsonError) {
+      console.error("JSON Serialization failed even after sanitization:", jsonError);
+      throw new Error("Data contains circular references or invalid objects that could not be cleaned.");
+    }
+
+    await setDoc(DATA_DOC_REF, finalData);
     console.log("✅ Document successfully written to Firebase!");
   } catch (error) {
     console.error("❌ Error writing document: ", error);

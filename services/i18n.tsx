@@ -23,7 +23,8 @@ const translations: Record<Language, Record<string, string>> = {
     
     // Sales
     'nav.customers': 'Customer Management',
-    'nav.orders': 'Production Plan / Orders',
+    'nav.orders': 'Production Plan (List)',
+    'nav.poDocs': 'Create Production Order (Doc)',
     
     // Production
     'nav.machineStatus': 'Machine Status',
@@ -178,6 +179,23 @@ const translations: Record<Language, Record<string, string>> = {
     'mach.statusError': 'Error / Breakdown',
     'mach.runningNoJob': 'Machine Running, No Job',
     'mach.assignNow': 'Assign Job Now',
+
+    // PO Doc
+    'po.title': 'Production Orders',
+    'po.subtitle': 'Create formal production documents for approval',
+    'po.create': 'Create New Order',
+    'po.docNo': 'Doc No.',
+    'po.date': 'Date',
+    'po.customer': 'Customer / Dept',
+    'po.items': 'Items',
+    'po.print': 'Print Order',
+    'po.formTitle': 'Production Order Form',
+    'po.addItem': 'Add Item',
+    'po.note': 'Note',
+    'po.sign.ordered': 'Ordered By',
+    'po.sign.approved': 'Approved By',
+    'po.sign.received': 'Received By',
+    'po.docHeader': 'PRODUCTION ORDER',
   },
   th: {
     // Categories
@@ -192,6 +210,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.dashboard': 'แดชบอร์ด',
     'nav.customers': 'จัดการลูกค้า',
     'nav.orders': 'แผนการผลิต / ออเดอร์',
+    'nav.poDocs': 'ใบสั่งผลิต (เอกสาร)',
     'nav.machineStatus': 'สถานะเครื่องฉีด',
     'nav.kanban': 'สายการผลิต (Kanban)',
     'nav.prodLogs': 'บันทึกการผลิต (ฉีด)',
@@ -347,6 +366,23 @@ const translations: Record<Language, Record<string, string>> = {
     'mach.statusError': 'เครื่องเสีย / ขัดข้อง (Error)',
     'mach.runningNoJob': 'เครื่องทำงาน แต่ยังไม่ได้รับงาน',
     'mach.assignNow': 'มอบหมายงานทันที',
+
+    // PO Doc
+    'po.title': 'ใบสั่งผลิต (เอกสาร)',
+    'po.subtitle': 'สร้างเอกสารสั่งผลิตเพื่ออนุมัติและเซ็นรับทราบ',
+    'po.create': 'สร้างใบสั่งผลิต',
+    'po.docNo': 'เลขที่ใบสั่ง',
+    'po.date': 'วันที่',
+    'po.customer': 'ลูกค้า / แผนก',
+    'po.items': 'รายการสินค้า',
+    'po.print': 'พิมพ์เอกสาร',
+    'po.formTitle': 'แบบฟอร์มใบสั่งผลิต',
+    'po.addItem': 'เพิ่มรายการ',
+    'po.note': 'หมายเหตุ',
+    'po.sign.ordered': 'ผู้สั่งผลิต',
+    'po.sign.approved': 'ผู้อนุมัติ',
+    'po.sign.received': 'ผู้รับคำสั่ง',
+    'po.docHeader': 'ใบสั่งผลิต',
   },
   cn: {
     // Categories
@@ -361,6 +397,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.dashboard': '仪表板 (Dashboard)',
     'nav.customers': '客户管理',
     'nav.orders': '生产计划/订单',
+    'nav.poDocs': '生产单 (文件)',
     'nav.machineStatus': '机器状态',
     'nav.kanban': '看板 (Kanban)',
     'nav.prodLogs': '生产日志',
@@ -434,6 +471,23 @@ const translations: Record<Language, Record<string, string>> = {
     'mach.statusError': '故障 / 停机',
     'mach.runningNoJob': '机器运行中，无任务',
     'mach.assignNow': '立即分配任务',
+
+    // PO Doc
+    'po.title': '生产订单 (文件)',
+    'po.subtitle': '创建用于审批的生产文件',
+    'po.create': '创建订单',
+    'po.docNo': '单号',
+    'po.date': '日期',
+    'po.customer': '客户',
+    'po.items': '项目',
+    'po.print': '打印订单',
+    'po.formTitle': '生产订单表',
+    'po.addItem': '添加项目',
+    'po.note': '备注',
+    'po.sign.ordered': '订购人',
+    'po.sign.approved': '批准人',
+    'po.sign.received': '接收人',
+    'po.docHeader': '生产订单',
   }
 };
 

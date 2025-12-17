@@ -89,6 +89,7 @@ const rawDataString = `
   "packing_raw_materials": [],
   "packing_qc_entries": [],
   "factory_products": [],
+  "production_documents": [],
   "factory_settings": {
     "name": "CT Electric",
     "companyInfo": {
@@ -166,6 +167,7 @@ export const getFactoryData = (): FactoryData => {
       packing_qc_entries: [],
       packing_raw_materials: [],
       factory_products: [],
+      production_documents: [],
       factory_settings: {
         companyInfo: { name: '', address: '', taxId: '', phone: '', email: '', logoUrl: '' },
         productionConfig: { shifts: [], lowStockThreshold: 0, vatRate: 0, regrindPercentage: 0, workingHoursPerDay: 8 },

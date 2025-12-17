@@ -15,6 +15,7 @@ import Maintenance from './pages/Maintenance';
 import Shipping from './pages/Shipping';
 import Products from './pages/Products';
 import Analytics from './pages/Analytics';
+import ProductionOrderDocs from './pages/ProductionOrderDocs'; // IMPORT NEW PAGE
 
 import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
@@ -71,6 +72,10 @@ const App: React.FC = () => {
       setIsLoading(true);
       try {
         const cloudData = await fetchFactoryData();
+        // Ensure production_documents exists in loaded data (migration for existing users)
+        if (!cloudData.production_documents) {
+            cloudData.production_documents = [];
+        }
         setData(cloudData);
         setError(null);
       } catch (err) {
@@ -140,6 +145,7 @@ const App: React.FC = () => {
                 {/* Sales */}
                 <Route path="customers" element={<Customers />} />
                 <Route path="orders" element={<Orders />} />
+                <Route path="po-docs" element={<ProductionOrderDocs />} /> {/* NEW ROUTE */}
 
                 {/* Production */}
                 <Route path="machine-status" element={<Maintenance view="status" />} />

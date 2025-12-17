@@ -38,6 +38,10 @@ export interface MoldingLog {
   quantityProduced: number;
   hours?: number;
   machineId?: string;
+  // New Fields for Enhanced Management
+  startTime?: string;
+  targetQuantity?: number;
+  priority?: number;
 }
 
 export interface InventoryItem {
@@ -127,6 +131,28 @@ export interface FactorySettings {
   machineDepreciation: CostItem[];
 }
 
+// --- NEW: Production Document Interface ---
+export interface ProductionDocumentItem {
+    id: string;
+    productName: string;
+    quantity: number;
+    unit: string;
+    dueDate: string;
+    note?: string;
+}
+
+export interface ProductionDocument {
+    id: string;
+    docNumber: string; // e.g., PO-2025-001
+    date: string;
+    customerName: string;
+    status: 'Draft' | 'Approved' | 'In Progress' | 'Completed';
+    items: ProductionDocumentItem[];
+    createdBy: string;
+    approvedBy?: string; // Boss signature name
+    note?: string;
+}
+
 export interface FactoryData {
   packing_orders: PackingOrder[];
   packing_logs: PackingLog[];
@@ -138,4 +164,5 @@ export interface FactoryData {
   packing_raw_materials: InventoryItem[];
   factory_products: any[];
   factory_settings: FactorySettings;
+  production_documents: ProductionDocument[]; // New Collection
 }

@@ -4,7 +4,8 @@ import { useTranslation } from '../services/i18n';
 import { 
     Wrench, Activity, AlertTriangle, Power, Play, Pause, 
     MoreHorizontal, Settings, Box, User, Clock, CheckCircle2, 
-    Plus, X, Save, AlertCircle, BarChart3, Gauge, ChevronDown
+    Plus, X, Save, AlertCircle, BarChart3, Gauge, ChevronDown,
+    Calendar, Hash, MoveRight, Trash2, PauseCircle, PlayCircle
 } from 'lucide-react';
 import { Machine, MoldingLog, PackingOrder } from '../types';
 
@@ -13,10 +14,11 @@ interface MaintenanceProps {
 }
 
 // --- Types for Local State ---
-type ModalType = 'ASSIGN_JOB' | 'LOG_OUTPUT' | 'CHANGE_STATUS' | null;
+type ModalType = 'ASSIGN_JOB' | 'MANAGE_JOB' | 'CHANGE_STATUS' | null;
 
 const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
-  const { factory_machines, molding_logs, packing_orders, factory_settings, packing_employees } = useFactoryData();
+  const factoryData = useFactoryData(); // Get full data object once
+  const { factory_machines, molding_logs, packing_orders, packing_employees } = factoryData;
   const { updateData } = useFactoryActions();
   const { t } = useTranslation();
 
@@ -26,7 +28,6 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
   const [formData, setFormData] = useState<any>({});
 
   // --- Helpers for Status ---
-  // Map raw data (which might be in Thai or English) to a normalized key
   const getNormalizedStatus = (status: string) => {
       if (['ทำงาน', 'Working', 'Running'].includes(status)) return 'running';
       if (['เสีย', 'Error', 'Breakdown'].includes(status)) return 'error';
@@ -34,7 +35,6 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
       return 'idle';
   };
 
-  // Get Display Label based on current language
   const getStatusLabel = (status: string) => {
       const normalized = getNormalizedStatus(status);
       switch (normalized) {
@@ -46,28 +46,19 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
   };
 
   // --- Derived Data ---
-  
-  // Link Machines to Active Logs and Orders
   const machineStatusMap = useMemo(() => {
     return factory_machines.map(machine => {
-        // Find active log (In Progress)
-        // Normalize status check to match multiple variants
         const activeLog = molding_logs?.find(l => 
             l.machine === machine.name && 
-            ['In Progress', 'Working', 'ทำงาน', 'Running'].includes(l.status)
+            ['In Progress', 'Working', 'ทำงาน', 'Running', 'Paused', 'Stopped'].includes(l.status)
         );
-
-        // Find associated order info if log exists
         const associatedOrder = activeLog ? packing_orders?.find(o => o.id === activeLog.orderId) : null;
         
-        // Calculate Progress
-        const target = associatedOrder ? associatedOrder.quantity : 0;
+        // Use Log's targetQuantity if available, otherwise Order's
+        const target = activeLog?.targetQuantity || associatedOrder?.quantity || 0;
         const current = activeLog ? activeLog.quantityProduced : 0;
         const progress = target > 0 ? (current / target) * 100 : 0;
-
-        // Mock OEE (Random for demo if not in log)
         const oee = activeLog ? (Math.random() * (98 - 75) + 75).toFixed(1) : 0;
-
         const normalizedStatus = getNormalizedStatus(machine.status);
 
         return {
@@ -82,19 +73,37 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
     });
   }, [factory_machines, molding_logs, packing_orders]);
 
-
   // --- Actions ---
 
   const handleOpenModal = (machine: Machine, type: ModalType) => {
       setSelectedMachine(machine);
       setModalType(type);
       
-      // Prefill Logic
       if (type === 'ASSIGN_JOB') {
           setFormData({ orderId: '', operator: '' });
-      } else if (type === 'LOG_OUTPUT') {
-          setFormData({ addedQuantity: 0, rejectQuantity: 0 });
-      } else if (type === 'CHANGE_STATUS') {
+      } 
+      else if (type === 'MANAGE_JOB') {
+          // Find the active log to pre-fill
+          const activeMachineData = machineStatusMap.find(m => m.id === machine.id);
+          const log = activeMachineData?.activeLog;
+          const order = activeMachineData?.associatedOrder;
+
+          if (log) {
+            setFormData({
+                logId: log.id,
+                productName: log.productName,
+                lotNumber: log.lotNumber,
+                operator: log.operatorName,
+                quantityProduced: log.quantityProduced,
+                targetQuantity: log.targetQuantity || order?.quantity || 0,
+                priority: log.priority || 10,
+                startTime: log.startTime || `${log.date} 08:00`,
+                status: log.status,
+                moveToMachine: '' // For transfer logic
+            });
+          }
+      } 
+      else if (type === 'CHANGE_STATUS') {
           setFormData({ status: machine.status });
       }
   };
@@ -132,24 +141,46 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
               quantityRejected: 0,
               operatorName: formData.operator || 'Unknown',
               shift: 'Day',
-              productId: ''
+              productId: '',
+              startTime: new Date().toLocaleString('sv-SE').slice(0, 16).replace('T', ' '), // Current Time YYYY-MM-DD HH:mm
+              targetQuantity: order.quantity,
+              priority: 10
           };
           newMoldingLogs.push(newLog);
           newMachines[machineIndex] = { ...newMachines[machineIndex], status: 'ทำงาน' };
       } 
       
-      // 2. Log Output Logic
-      else if (modalType === 'LOG_OUTPUT') {
-          const activeLogIndex = newMoldingLogs.findIndex(l => 
-              l.machine === selectedMachine.name && ['In Progress', 'Working', 'ทำงาน'].includes(l.status)
-          );
-          
-          if (activeLogIndex >= 0) {
-              const log = newMoldingLogs[activeLogIndex];
-              newMoldingLogs[activeLogIndex] = {
-                  ...log,
-                  quantityProduced: (log.quantityProduced || 0) + (parseInt(formData.addedQuantity) || 0),
-                  quantityRejected: (log.quantityRejected || 0) + (parseInt(formData.rejectQuantity) || 0)
+      // 2. Manage Job Logic (Detailed Edit)
+      else if (modalType === 'MANAGE_JOB') {
+          const logIndex = newMoldingLogs.findIndex(l => l.id === formData.logId);
+          if (logIndex >= 0) {
+              const currentLog = newMoldingLogs[logIndex];
+              
+              // Handle Machine Transfer
+              let machineName = currentLog.machine;
+              if (formData.moveToMachine && formData.moveToMachine !== currentLog.machine) {
+                  // 1. Free up current machine
+                  newMachines[machineIndex] = { ...newMachines[machineIndex], status: 'ว่าง' };
+                  
+                  // 2. Occupy new machine
+                  const newMachineIndex = newMachines.findIndex(m => m.name === formData.moveToMachine);
+                  if (newMachineIndex >= 0) {
+                       newMachines[newMachineIndex] = { ...newMachines[newMachineIndex], status: 'ทำงาน' };
+                  }
+                  machineName = formData.moveToMachine;
+              }
+
+              // Update Log
+              newMoldingLogs[logIndex] = {
+                  ...currentLog,
+                  machine: machineName,
+                  quantityProduced: parseInt(formData.quantityProduced) || 0,
+                  targetQuantity: parseInt(formData.targetQuantity) || 0,
+                  lotNumber: formData.lotNumber,
+                  operatorName: formData.operator,
+                  startTime: formData.startTime,
+                  priority: parseInt(formData.priority) || 10,
+                  // Status is handled via specific buttons, but we save basic edits here
               };
           }
       }
@@ -159,9 +190,8 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
           newMachines[machineIndex] = { ...newMachines[machineIndex], status: formData.status };
       }
 
-      // Commit Updates
       await updateData({
-          ...useFactoryData(),
+          ...factoryData,
           factory_machines: newMachines,
           molding_logs: newMoldingLogs
       });
@@ -169,13 +199,44 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
       handleCloseModal();
   };
 
-  // --- Render Helpers ---
+  // Dedicated Actions for Manage Job Modal
+  const handleJobAction = async (action: 'PAUSE' | 'FINISH' | 'REMOVE') => {
+        if (!selectedMachine || !formData.logId) return;
+
+        const newMoldingLogs = [...(molding_logs || [])];
+        const newMachines = [...factory_machines];
+        const machineIndex = newMachines.findIndex(m => m.id === selectedMachine.id);
+        const logIndex = newMoldingLogs.findIndex(l => l.id === formData.logId);
+
+        if (logIndex === -1 || machineIndex === -1) return;
+
+        if (action === 'PAUSE') {
+            newMoldingLogs[logIndex].status = 'Stopped';
+            newMachines[machineIndex].status = 'ว่าง'; // Machine becomes idle
+        } else if (action === 'FINISH') {
+            newMoldingLogs[logIndex].status = 'Completed';
+            newMoldingLogs[logIndex].quantityProduced = parseInt(formData.quantityProduced) || newMoldingLogs[logIndex].quantityProduced;
+            newMachines[machineIndex].status = 'ว่าง';
+        } else if (action === 'REMOVE') {
+            // Either delete or mark cancelled
+            newMoldingLogs.splice(logIndex, 1);
+            newMachines[machineIndex].status = 'ว่าง';
+        }
+
+        await updateData({
+            ...factoryData,
+            factory_machines: newMachines,
+            molding_logs: newMoldingLogs
+        });
+        handleCloseModal();
+  };
+
 
   const getStatusColor = (normalizedStatus: string) => {
       if (normalizedStatus === 'running') return 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]';
       if (normalizedStatus === 'error') return 'bg-red-500';
       if (normalizedStatus === 'maintenance') return 'bg-orange-500';
-      return 'bg-slate-300'; // Idle
+      return 'bg-slate-300';
   };
 
   const getStatusLabelColor = (normalizedStatus: string) => {
@@ -184,7 +245,6 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
       if (normalizedStatus === 'maintenance') return 'bg-orange-100 text-orange-700 border-orange-200';
       return 'bg-slate-100 text-slate-500 border-slate-200';
   };
-
 
   return (
     <div className="space-y-8 pb-12">
@@ -203,7 +263,6 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
             </p>
         </div>
         
-        {/* Quick Filter Legend */}
         {view === 'status' && (
             <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-50 text-green-700 text-xs font-bold cursor-pointer hover:bg-green-100">
@@ -232,7 +291,6 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                 {/* 1. Header: Status & Name */}
                 <div className="p-5 border-b border-slate-100 flex justify-between items-start">
                     <div className="flex items-center gap-3">
-                        {/* Status Light */}
                         <div className={`w-3 h-3 rounded-full ${getStatusColor(item.normalizedStatus)}`}></div>
                         <div>
                             <h3 className="font-bold text-lg text-slate-800 leading-none">{item.name}</h3>
@@ -247,16 +305,16 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                 {/* 2. Body: Context (Job or Idle) */}
                 <div className="p-5 min-h-[160px] flex flex-col justify-center">
                     {item.activeLog ? (
-                        <div className="space-y-4">
+                        <div className="space-y-4 cursor-pointer" onClick={() => handleOpenModal(item, 'MANAGE_JOB')}>
                             {/* Product Info */}
                             <div>
                                 <div className="flex justify-between items-center mb-1">
                                     <span className="text-xs font-bold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
                                         {item.activeLog.jobId}
                                     </span>
-                                    <span className="text-xs text-slate-400 font-mono">{item.activeLog.lotNumber}</span>
+                                    <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1 rounded">{item.activeLog.lotNumber}</span>
                                 </div>
-                                <h4 className="font-medium text-slate-800 text-sm line-clamp-1" title={item.activeLog.productName}>
+                                <h4 className="font-medium text-slate-800 text-sm line-clamp-1 hover:text-primary-600 transition-colors" title={item.activeLog.productName}>
                                     {item.activeLog.productName}
                                 </h4>
                             </div>
@@ -269,18 +327,17 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                 </div>
                                 <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                                     <div 
-                                        className="h-full bg-gradient-to-r from-green-500 to-green-400 transition-all duration-1000" 
+                                        className="h-full bg-gradient-to-r from-primary-500 to-primary-400 transition-all duration-1000" 
                                         style={{ width: `${Math.min(item.progress, 100)}%` }}
                                     ></div>
                                 </div>
                                 <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
                                     <span>{item.activeLog.quantityProduced.toLocaleString()} pcs</span>
-                                    <span>{item.associatedOrder?.quantity.toLocaleString() || '-'} pcs</span>
+                                    <span>{(item.activeLog.targetQuantity || item.associatedOrder?.quantity || 0).toLocaleString()} pcs</span>
                                 </div>
                             </div>
                         </div>
                     ) : item.isOnline ? (
-                        /* Running but no job assigned case */
                         <div className="text-center py-4">
                             <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-3 text-orange-400 animate-pulse">
                                 <AlertCircle size={24} />
@@ -294,28 +351,32 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                             </button>
                         </div>
                     ) : (
-                        /* Idle case */
                         <div className="text-center py-4">
                             <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300">
                                 <Power size={24} />
                             </div>
                             <p className="text-sm font-medium text-slate-500">{t('mach.machineIdle')}</p>
-                            <p className="text-xs text-slate-400">{t('mach.ready')}</p>
+                            <button 
+                                onClick={() => handleOpenModal(item, 'ASSIGN_JOB')}
+                                className="mt-2 px-4 py-1.5 bg-primary-50 text-primary-600 text-xs font-bold rounded-full hover:bg-primary-100 transition-colors"
+                            >
+                                {t('mach.assign')}
+                            </button>
                         </div>
                     )}
                 </div>
 
-                {/* 3. Footer: Metrics or Actions */}
+                {/* 3. Footer */}
                 <div className="px-5 py-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
                      {item.isOnline && item.activeLog ? (
                          <div className="flex items-center gap-4 text-xs">
-                             <div className="flex items-center gap-1.5" title="OEE (Efficiency)">
-                                 <Gauge size={14} className="text-purple-500" />
-                                 <span className="font-bold text-slate-700">{item.oee}%</span>
-                             </div>
                              <div className="flex items-center gap-1.5" title="Operator">
                                  <User size={14} className="text-blue-500" />
                                  <span className="font-medium text-slate-600 truncate max-w-[80px]">{item.activeLog.operatorName || '-'}</span>
+                             </div>
+                             <div className="flex items-center gap-1.5" title="Start Time">
+                                 <Clock size={14} className="text-slate-400" />
+                                 <span className="text-slate-500">{item.activeLog.startTime?.split(' ')[1] || '08:00'}</span>
                              </div>
                          </div>
                      ) : (
@@ -324,31 +385,20 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                          </div>
                      )}
 
-                     {/* Action Menu (Hover or Click) */}
                      <div className="flex gap-2">
-                         {item.isOnline ? (
+                         {item.isOnline && (
                              <button 
-                                onClick={() => handleOpenModal(item, 'LOG_OUTPUT')}
-                                className="p-2 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-600 rounded-lg shadow-sm transition-all"
-                                title={t('mach.log')}
+                                onClick={() => handleOpenModal(item, 'MANAGE_JOB')}
+                                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:border-primary-300 hover:text-primary-600 shadow-sm transition-all flex items-center gap-1"
                              >
-                                 <Plus size={16} />
-                             </button>
-                         ) : (
-                             <button 
-                                onClick={() => handleOpenModal(item, 'ASSIGN_JOB')}
-                                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1"
-                             >
-                                 <Play size={12} fill="currentColor" /> {t('mach.assign')}
+                                 <Settings size={14} /> Manage
                              </button>
                          )}
-                         
                          <button 
                             onClick={() => handleOpenModal(item, 'CHANGE_STATUS')}
-                            className="p-2 bg-white border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-700 rounded-lg shadow-sm transition-all"
-                            title={t('mach.settings')}
+                            className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-slate-600 rounded-lg shadow-sm transition-all"
                          >
-                             <Settings size={16} />
+                             <MoreHorizontal size={16} />
                          </button>
                      </div>
                 </div>
@@ -356,39 +406,42 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
         ))}
       </div>
 
-      {/* --- MODAL: MACHINE CONTROL CENTER --- */}
+      {/* --- MODAL --- */}
       {modalType && selectedMachine && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-md p-4 animate-in fade-in duration-300">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] border border-white/20">
-                {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className={`bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col max-h-[95vh] border border-white/20
+                ${modalType === 'MANAGE_JOB' ? 'max-w-2xl' : 'max-w-md'}
+            `}>
+                
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
                     <div>
                         <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                             {modalType === 'ASSIGN_JOB' && <><Play className="text-green-500" size={20} /> {t('mach.modalAssign')}</>}
-                             {modalType === 'LOG_OUTPUT' && <><BarChart3 className="text-blue-500" size={20} /> {t('mach.modalLog')}</>}
-                             {modalType === 'CHANGE_STATUS' && <><Settings className="text-slate-500" size={20} /> {t('mach.modalStatus')}</>}
+                             {modalType === 'ASSIGN_JOB' && <>{t('mach.modalAssign')}</>}
+                             {modalType === 'MANAGE_JOB' && <>{t('mach.modalLog')} & Control</>}
+                             {modalType === 'CHANGE_STATUS' && <>{t('mach.modalStatus')}</>}
                         </h3>
                         <p className="text-xs text-slate-400 font-medium mt-0.5">{selectedMachine.name} • {selectedMachine.location}</p>
                     </div>
-                    <button onClick={handleCloseModal} className="text-slate-300 hover:text-slate-500 transition-colors">
-                        <X size={24} />
+                    <button onClick={handleCloseModal} className="text-slate-300 hover:text-slate-500 transition-colors p-1 bg-slate-50 rounded-full">
+                        <X size={20} />
                     </button>
                 </div>
 
-                {/* Modal Body */}
-                <div className="p-6 space-y-6 overflow-y-auto">
+                {/* Body */}
+                <div className="p-6 overflow-y-auto custom-scrollbar">
                     
-                    {/* 1. ASSIGN JOB FORM */}
+                    {/* --- ASSIGN JOB --- */}
                     {modalType === 'ASSIGN_JOB' && (
-                        <>
-                            <div className="space-y-3">
-                                <label className="block text-sm font-medium text-slate-700">{t('mach.selectOrder')}</label>
-                                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-slate-700">{t('mach.selectOrder')}</label>
+                                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar border border-slate-100 rounded-xl p-2 bg-slate-50">
                                     {packing_orders.filter(o => o.status === 'Open' || !o.status).map(order => (
                                         <label 
                                             key={order.id} 
-                                            className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all
-                                                ${formData.orderId === order.id ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500' : 'border-slate-200 hover:border-primary-200 hover:bg-slate-50'}
+                                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all bg-white
+                                                ${formData.orderId === order.id ? 'border-primary-500 ring-1 ring-primary-500 shadow-md' : 'border-slate-200 hover:border-primary-200'}
                                             `}
                                         >
                                             <input 
@@ -402,103 +455,189 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
                                             <div className="flex-1">
                                                 <div className="flex justify-between">
                                                     <span className="font-bold text-slate-800 text-sm">{order.lotNumber}</span>
-                                                    <span className="text-xs bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">{order.dueDate}</span>
+                                                    <span className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{order.dueDate}</span>
                                                 </div>
                                                 <p className="text-sm text-slate-600 mt-0.5">{order.name}</p>
-                                                <p className="text-xs text-slate-400 mt-1">{t('orders.quantity')}: {order.quantity.toLocaleString()}</p>
+                                                <div className="flex gap-2 mt-1">
+                                                     <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">Qty: {order.quantity.toLocaleString()}</span>
+                                                     <span className="text-xs bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded">{order.color}</span>
+                                                </div>
                                             </div>
                                         </label>
                                     ))}
                                     {packing_orders.filter(o => o.status === 'Open').length === 0 && (
-                                        <div className="text-center py-6 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                        <div className="text-center py-6 text-slate-400 italic">
                                             {t('mach.noOrders')}
                                         </div>
                                     )}
                                 </div>
                             </div>
-                            <div className="relative">
-                                <label className="block text-sm font-medium text-slate-700 mb-1">{t('mach.operator')}</label>
-                                <div className="relative">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">{t('mach.operator')}</label>
+                                <select 
+                                    className="w-full border border-slate-300 bg-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    value={formData.operator}
+                                    onChange={(e) => setFormData({...formData, operator: e.target.value})}
+                                >
+                                    <option value="">{t('mach.selectOp')}</option>
+                                    {packing_employees?.map(emp => (
+                                        <option key={emp.id} value={emp.name}>{emp.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- MANAGE JOB (Detailed) --- */}
+                    {modalType === 'MANAGE_JOB' && (
+                        <div className="space-y-6">
+                            
+                            {/* 1. Job Info Header */}
+                            <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100">
+                                <h4 className="text-primary-700 font-bold text-lg mb-2">{formData.productName}</h4>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-sm font-medium text-slate-600">
+                                        <span>{parseInt(formData.quantityProduced).toLocaleString()} / {parseInt(formData.targetQuantity).toLocaleString()}</span>
+                                        <span>{((parseInt(formData.quantityProduced) / (parseInt(formData.targetQuantity) || 1)) * 100).toFixed(1)}%</span>
+                                    </div>
+                                    <div className="h-3 bg-white rounded-full overflow-hidden border border-blue-100">
+                                        <div 
+                                            className="h-full bg-primary-500 rounded-full" 
+                                            style={{ width: `${Math.min((parseInt(formData.quantityProduced) / (parseInt(formData.targetQuantity) || 1)) * 100, 100)}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 2. Detailed Form Inputs */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="col-span-2 md:col-span-1">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Operator</label>
                                     <select 
-                                        className="w-full border border-slate-200 bg-white text-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary-500 outline-none shadow-sm appearance-none"
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
                                         value={formData.operator}
                                         onChange={(e) => setFormData({...formData, operator: e.target.value})}
                                     >
-                                        <option value="">{t('mach.selectOp')}</option>
+                                        <option value="">-- Select --</option>
                                         {packing_employees?.map(emp => (
                                             <option key={emp.id} value={emp.name}>{emp.name}</option>
                                         ))}
                                     </select>
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                </div>
+
+                                <div className="col-span-2 md:col-span-1">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Lot Number</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                            value={formData.lotNumber}
+                                            onChange={(e) => setFormData({...formData, lotNumber: e.target.value})}
+                                        />
+                                        <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Target Quantity</label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                        value={formData.targetQuantity}
+                                        onChange={(e) => setFormData({...formData, targetQuantity: e.target.value})}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Produced (Update)</label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full border border-green-300 bg-green-50 text-green-800 font-bold rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500"
+                                        value={formData.quantityProduced}
+                                        onChange={(e) => setFormData({...formData, quantityProduced: e.target.value})}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Start Time</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                            value={formData.startTime}
+                                            onChange={(e) => setFormData({...formData, startTime: e.target.value})}
+                                            placeholder="YYYY-MM-DD HH:mm"
+                                        />
+                                        <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Priority</label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                                        value={formData.priority}
+                                        onChange={(e) => setFormData({...formData, priority: e.target.value})}
+                                        placeholder="10"
+                                    />
+                                    <span className="text-[10px] text-slate-400">Lower value = Higher priority</span>
+                                </div>
+                            </div>
+                            
+                            <hr className="border-slate-100" />
+
+                            {/* 3. Transfer Machine */}
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Move to Another Machine</label>
+                                <div className="relative">
+                                    <select 
+                                        className="w-full border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 appearance-none bg-white"
+                                        value={formData.moveToMachine}
+                                        onChange={(e) => setFormData({...formData, moveToMachine: e.target.value})}
+                                    >
+                                        <option value="">{selectedMachine.name} (Current)</option>
+                                        {factory_machines.filter(m => m.id !== selectedMachine.id && m.status === 'ว่าง').map(m => (
+                                            <option key={m.id} value={m.name}>{m.name} (Idle)</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                         <ChevronDown size={16} />
                                     </div>
                                 </div>
                             </div>
-                        </>
-                    )}
 
-                    {/* 2. LOG OUTPUT FORM */}
-                    {modalType === 'LOG_OUTPUT' && (
-                        <>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-2">
-                                <div className="text-xs text-slate-500 mb-1">{t('mach.currentJob')}</div>
-                                <div className="font-bold text-slate-800">
-                                    {molding_logs?.find(l => l.machine === selectedMachine.name && ['In Progress', 'Working', 'ทำงาน'].includes(l.status))?.productName || t('mach.runningNoJob')}
-                                </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1 text-center">{t('mach.goodQty')}</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="number" 
-                                            className="w-full border border-green-200 bg-green-50/50 rounded-xl px-4 py-4 text-2xl font-bold text-center text-green-700 focus:ring-2 focus:ring-green-500 outline-none"
-                                            placeholder="0"
-                                            value={formData.addedQuantity}
-                                            onChange={(e) => setFormData({...formData, addedQuantity: e.target.value})}
-                                        />
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-300">
-                                            <CheckCircle2 size={20} />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1 text-center">{t('mach.rejectQty')}</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="number" 
-                                            className="w-full border border-red-200 bg-red-50/50 rounded-xl px-4 py-4 text-2xl font-bold text-center text-red-700 focus:ring-2 focus:ring-red-500 outline-none"
-                                            placeholder="0"
-                                            value={formData.rejectQuantity}
-                                            onChange={(e) => setFormData({...formData, rejectQuantity: e.target.value})}
-                                        />
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-300">
-                                            <AlertCircle size={20} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {/* Preset Buttons */}
-                            <div className="flex justify-center gap-2">
-                                {[10, 50, 100, 500].map(num => (
+                            {/* 4. Action Buttons */}
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Actions</label>
+                                <div className="flex gap-3">
                                     <button 
-                                        key={num}
-                                        onClick={() => setFormData({...formData, addedQuantity: (parseInt(formData.addedQuantity) || 0) + num})}
-                                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition-colors"
+                                        onClick={() => handleJobAction('PAUSE')}
+                                        className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-950 px-4 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors"
                                     >
-                                        +{num}
+                                        <PauseCircle size={18} /> Pause Job
                                     </button>
-                                ))}
+                                    <button 
+                                        onClick={() => handleJobAction('FINISH')}
+                                        className="flex-1 bg-green-500 hover:bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        <CheckCircle2 size={18} /> Finish Job
+                                    </button>
+                                    <button 
+                                        onClick={() => handleJobAction('REMOVE')}
+                                        className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        <Trash2 size={18} /> Remove
+                                    </button>
+                                </div>
                             </div>
-                        </>
+                        </div>
                     )}
 
-                    {/* 3. CHANGE STATUS FORM */}
+                    {/* --- CHANGE STATUS --- */}
                     {modalType === 'CHANGE_STATUS' && (
                         <div className="space-y-4">
-                            <label className="block text-sm font-medium text-slate-700">{t('mach.setStatus')}</label>
+                            <label className="block text-sm font-bold text-slate-700">{t('mach.setStatus')}</label>
                             <div className="grid grid-cols-1 gap-3">
                                 {[
                                     { val: 'ทำงาน', label: 'mach.statusRun', color: 'bg-green-50 border-green-200 text-green-700', icon: Activity },
@@ -525,20 +664,20 @@ const Maintenance: React.FC<MaintenanceProps> = ({ view }) => {
 
                 </div>
 
-                {/* Modal Footer */}
-                <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                {/* Footer Buttons */}
+                <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
                     <button 
                         onClick={handleCloseModal}
-                        className="flex-1 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors"
+                        className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 transition-colors"
                     >
                         {t('mach.cancel')}
                     </button>
                     <button 
                         onClick={handleSubmit}
                         disabled={modalType === 'ASSIGN_JOB' && !formData.orderId}
-                        className="flex-[2] py-2.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="px-6 py-2.5 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                        <Save size={18} /> {t('mach.confirm')}
+                        {t('mach.confirm')}
                     </button>
                 </div>
             </div>

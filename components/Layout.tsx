@@ -17,7 +17,8 @@ import {
   FileBarChart,
   AlertTriangle,
   Briefcase,
-  Layers
+  Layers,
+  FileText
 } from 'lucide-react';
 import { useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
@@ -51,6 +52,7 @@ const Layout: React.FC = () => {
       key: 'sales', 
       icon: Briefcase,
       children: [
+        { path: '/po-docs', label: 'nav.poDocs' }, // New Link
         { path: '/customers', label: 'nav.customers' },
         { path: '/orders', label: 'nav.orders' }
       ]
@@ -94,9 +96,9 @@ const Layout: React.FC = () => {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-slate-300 flex-shrink-0 hidden md:flex flex-col transition-all duration-300">
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans print:bg-white">
+      {/* Sidebar - Hide on print */}
+      <aside className="w-64 bg-slate-900 text-slate-300 flex-shrink-0 hidden md:flex flex-col transition-all duration-300 print:hidden">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center space-x-3">
              {/* Placeholder logo */}
@@ -184,8 +186,8 @@ const Layout: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 md:px-10 shrink-0">
+        {/* Header - Hide on print */}
+        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 md:px-10 shrink-0 print:hidden">
            <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-slate-800 capitalize">
                     {/* Find current page label */}
@@ -225,7 +227,8 @@ const Layout: React.FC = () => {
            </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50/50">
+        {/* Content Area - Fix overflow for print */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50/50 print:p-0 print:bg-white print:overflow-visible">
           <Outlet />
         </div>
       </main>

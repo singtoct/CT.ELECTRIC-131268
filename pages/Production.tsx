@@ -8,8 +8,9 @@ import { MoldingLog } from '../types';
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const Production: React.FC = () => {
-  const { factory_machines, molding_logs, packing_orders } = useFactoryData();
-  const { updateData } = useFactoryActions(); // Need update action
+  const factoryData = useFactoryData(); // Grab full object once
+  const { factory_machines, molding_logs, packing_orders } = factoryData;
+  const { updateData } = useFactoryActions(); 
   const { t } = useTranslation();
   
   // State
@@ -107,18 +108,10 @@ const Production: React.FC = () => {
       if (!window.confirm("Are you sure you want to delete this log?")) return;
       
       const updatedLogs = molding_logs.filter(l => l.id !== id);
-      // Construct full data object
+      // Construct full data object using captured factoryData
       const newData = {
-          packing_orders: packing_orders,
-          packing_logs: useFactoryData().packing_logs,
+          ...factoryData,
           molding_logs: updatedLogs,
-          packing_inventory: useFactoryData().packing_inventory,
-          packing_employees: useFactoryData().packing_employees,
-          factory_machines: factory_machines,
-          packing_qc_entries: useFactoryData().packing_qc_entries,
-          packing_raw_materials: useFactoryData().packing_raw_materials,
-          factory_products: [],
-          factory_settings: useFactoryData().factory_settings
       };
       await updateData(newData);
   };
@@ -138,16 +131,8 @@ const Production: React.FC = () => {
       }
 
       const newData = {
-          packing_orders: packing_orders,
-          packing_logs: useFactoryData().packing_logs,
+          ...factoryData,
           molding_logs: updatedLogs,
-          packing_inventory: useFactoryData().packing_inventory,
-          packing_employees: useFactoryData().packing_employees,
-          factory_machines: factory_machines,
-          packing_qc_entries: useFactoryData().packing_qc_entries,
-          packing_raw_materials: useFactoryData().packing_raw_materials,
-          factory_products: [],
-          factory_settings: useFactoryData().factory_settings
       };
 
       await updateData(newData);
