@@ -1,3 +1,4 @@
+
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import "firebase/compat/analytics";
@@ -16,26 +17,15 @@ const firebaseConfig = {
 };
 
 // --- 2. Initialize Firebase ---
-// Use compat initialization to handle potential module resolution issues
 const app = !firebase.apps.length 
   ? firebase.initializeApp(firebaseConfig) 
   : firebase.app();
 
 const db = firebase.firestore(app);
-let analytics;
-try {
-  analytics = firebase.analytics(app);
-} catch (err) {
-  console.warn("Firebase Analytics failed to load", err);
-}
 
-// Enable Offline Persistence
+// Enable Offline Persistence (Best effort)
 db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-    if (err.code == 'failed-precondition') {
-        console.warn('Firebase persistence failed: Multiple tabs open');
-    } else if (err.code == 'unimplemented') {
-        console.warn('Firebase persistence not supported in this browser');
-    }
+    console.debug('Firebase persistence disabled:', err.code);
 });
 
 // Collection 'factory' -> Document 'main_data'
@@ -44,38 +34,17 @@ const DATA_DOC_REF = db.collection("factory").doc("main_data");
 // --- Helper: Deep Sanitize Data ---
 export const sanitizeData = (data: any): any => {
     const seen = new WeakSet();
-    
     const visit = (obj: any): any => {
-        // 1. Pass through primitives and null
-        if (!obj || typeof obj !== 'object') {
-            return obj;
-        }
-
-        // 2. Handle Dates
-        if (obj instanceof Date) {
-            return obj.toISOString();
-        }
-
-        // 3. Cycle Detection
-        if (seen.has(obj)) {
-            return null; // Return null instead of undefined to keep structure but break cycle
-        }
-
-        // 4. Strict Plain Object/Array Check
-        // Explicitly check for DOM nodes which often cause 'src' circular errors
-        if (obj.nodeType || obj instanceof Element) {
-            return null;
-        }
+        if (!obj || typeof obj !== 'object') return obj;
+        if (obj instanceof Date) return obj.toISOString();
+        if (seen.has(obj)) return null;
+        if (obj.nodeType || obj instanceof Element) return null;
 
         const constr = obj.constructor;
         const isArray = Array.isArray(obj);
-        // Allow Objects with no constructor or strictly 'Object'
         const isPlain = !constr || constr.name === 'Object';
         
-        // Reject custom classes (likely Firebase internal objects or unknown libs)
-        if (!isArray && !isPlain) {
-             return null;
-        }
+        if (!isArray && !isPlain) return null;
 
         seen.add(obj);
 
@@ -91,9 +60,7 @@ export const sanitizeData = (data: any): any => {
             const copy: any = {};
             for (const key in obj) {
                 if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                    // Filter out private keys often used by libs
                     if (key.startsWith('_') || key.startsWith('$')) continue;
-                    
                     const val = visit(obj[key]);
                     if (val !== undefined) copy[key] = val;
                 }
@@ -102,18 +69,22 @@ export const sanitizeData = (data: any): any => {
             return copy;
         }
     };
-    
     return visit(data);
 };
 
 // --- 3. Service Functions ---
 
-// Fetch Data
+// Fetch Data with Timeout for Offline Support
 export const fetchFactoryData = async (): Promise<FactoryData> => {
+  // Create a timeout promise (2 seconds)
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error("Connection timeout")), 2000)
+  );
+
   try {
-    const docSnap = await DATA_DOC_REF.get();
+    // Race Firestore against timeout
+    const docSnap: any = await Promise.race([DATA_DOC_REF.get(), timeout]);
     
-    // In compat API, .exists is a property, not a function
     if (docSnap.exists) {
       console.log("✅ Document data loaded from Firebase!");
       const rawData = docSnap.data();
@@ -121,28 +92,24 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
     } else {
       console.log("⚠️ No cloud data found! Initializing with default data...");
       const defaultData = getDefaultData();
-      await saveFactoryData(defaultData);
       return defaultData;
     }
   } catch (error) {
-    console.error("❌ Error getting document (Offline or Permission):", error);
-    throw error;
+    // If we time out or fail to connect, explicitly throw so App.tsx can handle it
+    console.warn("⚠️ Firebase offline or unreachable. Switching to local mode.");
+    throw new Error("Offline");
   }
 };
 
 // Save Data
 export const saveFactoryData = async (data: FactoryData): Promise<void> => {
   try {
-    // Robust Sanitization before saving
     const cleanData = sanitizeData(data);
-    
-    // Double-check with JSON stringify to ensure absolute purity
     const finalData = JSON.parse(JSON.stringify(cleanData));
-
+    // We don't await this if we want optimistic UI updates, but here we wait to confirm save
     await DATA_DOC_REF.set(finalData);
-    console.log("✅ Document successfully written to Firebase!");
   } catch (error) {
-    console.error("❌ Error writing document: ", error);
-    throw error;
+    console.warn("❌ Error writing document (likely offline): ", error);
+    // Don't throw here to prevent disrupting the UI
   }
 };

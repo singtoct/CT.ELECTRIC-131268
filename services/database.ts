@@ -12,27 +12,27 @@ const rawDataString = `
       "stock": 0,
       "color": "สีขาว",
       "salePrice": 45.0,
-      "name": "ชุดโคมไฟสำเร็จรูป CT-01",
+      "name": "GNT เบรคเกอร์ (สีขาว)",
       "status": "In Progress",
-      "lotNumber": "LOT-2025-001"
+      "lotNumber": "LOT-2025-GNT"
     }
   ],
   "molding_logs": [
     {
-      "id": "log-demo",
-      "jobId": "JOB-INJ-001",
+      "id": "log-gnt",
+      "jobId": "JOB-GNT-001",
       "orderId": "ord-001",
-      "productName": "ฝาครอบโคม (Internal Part)",
-      "productId": "prod-sub-01",
+      "productName": "GNT เบรคเกอร์ (สีขาว)",
+      "productId": "gnt-breaker-01",
       "machine": "เครื่องฉีด 1",
-      "quantityProduced": 1200,
-      "quantityRejected": 5,
-      "operatorName": "อาโม",
+      "quantityProduced": 0,
+      "quantityRejected": 0,
+      "operatorName": "---",
       "shift": "เช้า",
       "date": "2025-05-15",
-      "status": "รอนับ",
+      "status": "รอฉีด",
       "targetQuantity": 5000,
-      "lotNumber": "LOT-2025-001"
+      "lotNumber": "LOT-2025-GNT"
     }
   ],
   "factory_machines": [
@@ -43,33 +43,47 @@ const rawDataString = `
     { "id": "e1", "name": "อาโม", "phone": "081-111-1111", "department": "Packing", "dailyWage": 350, "hireDate": "2023-01-15", "address": "Bangkok", "status": "Active", "roleId": "r1" }
   ],
   "packing_inventory": [
-    { "id": "i1", "name": "ชุดโคมไฟสำเร็จรูป CT-01", "quantity": 100, "unit": "pcs", "source": "Produced", "category": "Finished" }
+    { "id": "inv-gnt", "name": "GNT เบรคเกอร์ (สีขาว)", "quantity": 0, "unit": "pcs", "source": "Produced", "category": "Finished" }
   ],
   "packing_raw_materials": [
-    { "id": "raw-001", "name": "เม็ดพลาสติก ABS เกรด A", "quantity": 500, "unit": "kg", "source": "Purchased", "category": "Material" },
-    { "id": "raw-comp-01", "name": "ฝาครอบโคม (Internal Part)", "quantity": 0, "unit": "pcs", "source": "Produced", "category": "Component" }
+    { 
+      "id": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", 
+      "name": "เม็ดพลาสติก ABS (เกรด GNT)", 
+      "quantity": 1000, 
+      "unit": "kg", 
+      "costPerUnit": 45.5,
+      "source": "Purchased", 
+      "category": "Material" 
+    },
+    { 
+      "id": "8daabcc1-3ee7-4be0-868c-b41c3922f26b", 
+      "name": "แม่สีผสม (White GNT)", 
+      "quantity": 50, 
+      "unit": "kg", 
+      "costPerUnit": 120.0,
+      "source": "Purchased", 
+      "category": "Material" 
+    }
   ],
   "packing_qc_entries": [],
   "factory_products": [
     {
-      "id": "prod-main-01",
-      "name": "ชุดโคมไฟสำเร็จรูป CT-01",
-      "category": "Assembly",
+      "id": "gnt-breaker-01",
+      "name": "GNT เบรคเกอร์ (สีขาว)",
+      "category": "สินค้าเพื่อขาย",
       "standardColor": "White",
-      "salePrice": 45.0,
+      "salePrice": 55.0,
       "bom": [
-        { "materialId": "raw-comp-01", "materialName": "ฝาครอบโคม (Internal Part)", "quantityPerUnit": 1 },
-        { "materialId": "raw-001", "materialName": "เม็ดพลาสติก ABS (ส่วนฐาน)", "quantityPerUnit": 0.02 }
-      ]
-    },
-    {
-      "id": "prod-sub-01",
-      "name": "ฝาครอบโคม (Internal Part)",
-      "category": "Injection",
-      "standardColor": "Clear",
-      "salePrice": 0,
-      "bom": [
-        { "materialId": "raw-001", "materialName": "เม็ดพลาสติก ABS เกรด A", "quantityPerUnit": 0.045 }
+        { 
+          "materialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", 
+          "materialName": "เม็ดพลาสติก ABS (เกรด GNT)", 
+          "quantityPerUnit": 0.045 
+        },
+        { 
+          "materialId": "8daabcc1-3ee7-4be0-868c-b41c3922f26b", 
+          "materialName": "แม่สีผสม (White GNT)", 
+          "quantityPerUnit": 0.0009 
+        }
       ]
     }
   ],

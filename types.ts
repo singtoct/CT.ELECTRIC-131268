@@ -1,4 +1,5 @@
 
+
 export interface BOMItem {
   materialId: string;
   materialName: string;
@@ -26,7 +27,7 @@ export interface PackingOrder {
   dueDate: string;
   stock?: number;
   salePrice: number;
-  status?: 'Open' | 'In Progress' | 'Completed' | 'Cancelled';
+  status?: 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | 'Ready';
   quantityDelivered?: number;
   lotNumber?: string;
   docId?: string; // Link to ProductionDocument

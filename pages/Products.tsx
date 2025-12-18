@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { useFactoryData, useFactoryActions } from '../App';
+import { useFactoryData, useFactoryActions, useApiKey } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
     Package, Search, Plus, Trash2, Save, X, Edit3, 
@@ -16,6 +16,7 @@ const Products: React.FC = () => {
   const data = useFactoryData();
   const { factory_products = [], packing_raw_materials = [] } = data;
   const { updateData } = useFactoryActions();
+  const { apiKey } = useApiKey();
   const { t } = useTranslation();
 
   const [search, setSearch] = useState('');
@@ -43,17 +44,24 @@ const Products: React.FC = () => {
   };
 
   const handleAiSuggestPrice = async (prod: Product) => {
+    if (!apiKey) {
+        alert("กรุณาใส่ API Key ก่อนใช้งานฟีเจอร์นี้");
+        return;
+    }
     setIsAiCalculating(true);
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: apiKey });
         const cost = calculateProductCost(prod);
         const prompt = `Calculate suggested sale price for product: ${prod.name}. Production Cost: ${cost} THB. Desired Profit: ${prod.profitMargin}%. Market factor: High. Return only a number.`;
         const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
         const suggested = parseFloat(response.text.match(/\d+\.?\d*/)?.[0] || "0");
         
         setCurrentProduct(prev => prev ? { ...prev, salePrice: suggested } : null);
-    } catch (e) { alert("AI Suggestion failed"); }
-    finally { setIsAiCalculating(false); }
+    } catch (e) { 
+        alert("AI Suggestion failed: " + e); 
+    } finally { 
+        setIsAiCalculating(false); 
+    }
   };
 
   const handleSave = async () => {

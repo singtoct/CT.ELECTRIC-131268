@@ -1,7 +1,13 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useFactoryActions, useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
-import { Save, Plus, Trash2, Upload, Download, Loader2, Check } from 'lucide-react';
+import { 
+    Save, Plus, Trash2, Upload, Download, Loader2, Check, 
+    AlertTriangle, RefreshCcw, Database, Settings as SettingsIcon,
+    FileText, Box, Activity, AlertOctagon, CheckSquare, Square,
+    Truck, ClipboardCheck, Cpu, Layers
+} from 'lucide-react';
 import { FactoryData, FactorySettings, CostItem } from '../types';
 
 // Helper Component for Simple Lists (Strings)
@@ -149,7 +155,7 @@ const Settings: React.FC = () => {
     const allData = useFactoryData();
     const { factory_settings } = allData;
 
-    // Initialize with safe defaults to prevent null pointers
+    // Initialize with safe defaults
     const defaultSettings: FactorySettings = {
         name: 'CT Electric',
         companyInfo: { name: '', address: '', taxId: '', phone: '', email: '', logoUrl: '' },
@@ -164,7 +170,18 @@ const Settings: React.FC = () => {
 
     const [settings, setSettings] = useState<FactorySettings>(defaultSettings);
     const [msg, setMsg] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'general' | 'reset'>('general');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Reset Options State
+    const [resetOptions, setResetOptions] = useState({
+        orders: false,
+        logs: false,
+        inventory: false,
+        materials: false,
+        qc: false,
+        machines: false
+    });
 
     useEffect(() => {
         if (factory_settings) {
@@ -187,7 +204,6 @@ const Settings: React.FC = () => {
         }
     };
 
-    // Generic Update Handlers
     const updateCompany = (field: keyof typeof settings.companyInfo, value: string) => {
         setSettings(prev => ({ ...prev, companyInfo: { ...prev.companyInfo, [field]: value } }));
     };
@@ -196,7 +212,8 @@ const Settings: React.FC = () => {
         setSettings(prev => ({ ...prev, productionConfig: { ...prev.productionConfig, [field]: value } }));
     };
 
-    // JSON Export/Import
+    // --- Data Management Functions ---
+
     const handleExport = () => {
         const dataStr = JSON.stringify(allData, null, 2);
         const blob = new Blob([dataStr], { type: "application/json" });
@@ -225,190 +242,262 @@ const Settings: React.FC = () => {
         reader.readAsText(file);
     };
 
+    // --- Reset Logic ---
+
+    const toggleOption = (key: keyof typeof resetOptions) => {
+        setResetOptions(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const toggleAll = (forcedState?: boolean) => {
+        const targetState = forcedState !== undefined 
+            ? forcedState 
+            : !Object.values(resetOptions).every(v => v);
+            
+        setResetOptions({
+            orders: targetState,
+            logs: targetState,
+            inventory: targetState,
+            materials: targetState,
+            qc: targetState,
+            machines: targetState
+        });
+    };
+
+    const executeReset = async () => {
+        const selectedCount = Object.values(resetOptions).filter(v => v).length;
+        if (selectedCount === 0) {
+            alert("กรุณาเลือกรายการที่ต้องการล้างข้อมูลอย่างน้อย 1 รายการ");
+            return;
+        }
+
+        if (!window.confirm(`⚠️ ยืนยันการล้างข้อมูล ${selectedCount} รายการ?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return;
+
+        const newData = { ...allData };
+
+        if (resetOptions.orders) {
+            newData.packing_orders = [];
+            newData.production_documents = [];
+        }
+        
+        if (resetOptions.logs) {
+            newData.molding_logs = [];
+        }
+        
+        if (resetOptions.inventory) {
+            newData.packing_inventory = newData.packing_inventory.map(i => ({...i, quantity: 0}));
+        }
+        
+        if (resetOptions.materials) {
+            newData.packing_raw_materials = newData.packing_raw_materials.map(i => ({...i, quantity: 0}));
+        }
+
+        if (resetOptions.qc) {
+            newData.packing_qc_entries = [];
+        }
+
+        if (resetOptions.machines) {
+            newData.factory_machines = newData.factory_machines.map(m => ({...m, status: 'ว่าง'}));
+        }
+
+        await updateData(newData);
+        setMsg(`ล้างข้อมูล ${selectedCount} รายการเรียบร้อยแล้ว`);
+        // Reset checkboxes if needed, or leave them
+    };
+
+    const resetItems = [
+        { key: 'orders', label: 'ใบสั่งผลิตและเอกสาร PO (Orders)', icon: FileText, desc: 'ลบรายการสั่งผลิต, เอกสาร PO และประวัติการจัดส่ง' },
+        { key: 'logs', label: 'ประวัติการผลิต (Production Logs)', icon: Activity, desc: 'ลบบันทึกยอดผลิตรายวันของทุกเครื่องจักร' },
+        { key: 'machines', label: 'สถานะเครื่องจักร (Machine Status)', icon: Cpu, desc: 'รีเซ็ตสถานะทุกเครื่องให้เป็น "ว่าง" (Idle)' },
+        { key: 'inventory', label: 'สต็อกสินค้าสำเร็จรูป (Finished Goods)', icon: Box, desc: 'ปรับยอดคงเหลือสินค้าสำเร็จรูปทุกรายการเป็น 0' },
+        { key: 'materials', label: 'สต็อกวัตถุดิบ (Raw Materials)', icon: Layers, desc: 'ปรับยอดคงเหลือวัตถุดิบทุกรายการเป็น 0' },
+        { key: 'qc', label: 'ประวัติ QC (Quality Control)', icon: ClipboardCheck, desc: 'ลบประวัติการตรวจสอบคุณภาพและรายการรอตรวจสอบ' },
+    ];
+
     return (
         <div className="max-w-7xl mx-auto space-y-6 pb-20">
-            {/* Header with Save Button */}
-            <div className="flex items-center justify-between sticky top-0 z-20 bg-slate-50/95 backdrop-blur py-4 border-b border-slate-200">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-800">{t('set.title')}</h2>
-                    <p className="text-slate-500 hidden sm:block">{t('set.saveAll')}</p>
+            {/* Header */}
+            <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur py-4 border-b border-slate-200">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800">{t('set.title')}</h2>
+                        <p className="text-slate-500 text-sm">จัดการการตั้งค่าและข้อมูลระบบ</p>
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-200 p-1 rounded-lg">
+                        <button 
+                            onClick={() => setActiveTab('general')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'general' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <SettingsIcon size={16}/> ทั่วไป
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('reset')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'reset' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Database size={16}/> ล้างข้อมูล / รีเซ็ต
+                        </button>
+                    </div>
+                    {activeTab === 'general' && (
+                        <button 
+                            onClick={handleSave}
+                            disabled={isActionLoading}
+                            className="hidden md:flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-all disabled:opacity-50"
+                        >
+                            {isActionLoading ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                            {t('set.saveAll')}
+                        </button>
+                    )}
                 </div>
-                <button 
-                    onClick={handleSave}
-                    disabled={isActionLoading}
-                    className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-all disabled:opacity-50"
-                >
-                    {isActionLoading ? <Loader2 className="animate-spin" /> : <Save size={20} />}
-                    {t('set.saveAll')}
-                </button>
             </div>
 
             {msg && (
-                <div className="fixed top-20 right-8 bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2 z-50">
+                <div className="fixed top-24 right-8 bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2 z-50">
                     <Check size={20} /> {msg}
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* --- Left Column --- */}
-                <div className="space-y-8">
-                    
-                    {/* 1. Company Info */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                         <h3 className="font-bold text-slate-800 mb-4">{t('set.companyProfile')}</h3>
-                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.companyName')}</label>
-                                <input 
-                                    type="text" 
-                                    value={settings.companyInfo.name} 
-                                    onChange={(e) => updateCompany('name', e.target.value)}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.companyAddress')}</label>
-                                <textarea 
-                                    value={settings.companyInfo.address} 
-                                    onChange={(e) => updateCompany('address', e.target.value)}
-                                    rows={3}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-white text-slate-900"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.taxId')}</label>
-                                <input 
-                                    type="text" 
-                                    value={settings.companyInfo.taxId} 
-                                    onChange={(e) => updateCompany('taxId', e.target.value)}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
-                                />
-                            </div>
-                            <div className="flex items-center gap-4 border-t border-slate-100 pt-4 mt-2">
-                                <div className="h-16 w-16 bg-slate-100 rounded border border-slate-200 flex items-center justify-center overflow-hidden">
-                                    {settings.companyInfo.logoUrl ? <img src={settings.companyInfo.logoUrl} alt="Logo" className="w-full h-full object-contain" /> : <span className="text-xs text-slate-400">Logo</span>}
+            {activeTab === 'general' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    {/* Left Column */}
+                    <div className="space-y-8">
+                        {/* Company Info */}
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                             <h3 className="font-bold text-slate-800 mb-4">{t('set.companyProfile')}</h3>
+                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.companyName')}</label>
+                                    <input type="text" value={settings.companyInfo.name} onChange={(e) => updateCompany('name', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
                                 </div>
-                                <div className="flex-1">
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.logoUrl')}</label>
-                                    <div className="flex gap-2">
-                                        <input 
-                                            type="text" 
-                                            value={settings.companyInfo.logoUrl} 
-                                            onChange={(e) => updateCompany('logoUrl', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
-                                        />
-                                        <button className="text-xs border border-slate-300 rounded px-2 hover:bg-slate-50">{t('set.changeLogo')}</button>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.companyAddress')}</label>
+                                    <textarea value={settings.companyInfo.address} onChange={(e) => updateCompany('address', e.target.value)} rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none bg-white text-slate-900" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.taxId')}</label>
+                                    <input type="text" value={settings.companyInfo.taxId} onChange={(e) => updateCompany('taxId', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
+                                </div>
+                                <div className="flex items-center gap-4 border-t border-slate-100 pt-4 mt-2">
+                                    <div className="h-16 w-16 bg-slate-100 rounded border border-slate-200 flex items-center justify-center overflow-hidden">
+                                        {settings.companyInfo.logoUrl ? <img src={settings.companyInfo.logoUrl} alt="Logo" className="w-full h-full object-contain" /> : <span className="text-xs text-slate-400">Logo</span>}
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.logoUrl')}</label>
+                                        <input type="text" value={settings.companyInfo.logoUrl} onChange={(e) => updateCompany('logoUrl', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
                                     </div>
                                 </div>
+                             </div>
+                        </div>
+
+                        {/* Overhead & Depreciation */}
+                        <CostListEditor title={t('set.overhead')} subtext="ค่าใช้จ่ายแฝง (Indirect Costs)" items={settings.overheadCosts} onUpdate={(items) => setSettings(prev => ({...prev, overheadCosts: items}))} t={t} />
+                        <CostListEditor title={t('set.depreciation')} subtext="ค่าเสื่อมราคาเครื่องจักร (Machine Depreciation)" items={settings.machineDepreciation} onUpdate={(items) => setSettings(prev => ({...prev, machineDepreciation: items}))} t={t} />
+                        
+                        {/* General Config */}
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                             <h3 className="font-bold text-slate-800 mb-4">{t('set.general')}</h3>
+                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.regrind')}</label>
+                                    <input type="number" value={settings.productionConfig.regrindPercentage} onChange={(e) => updateProdConfig('regrindPercentage', parseFloat(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.oeeHours')}</label>
+                                    <input type="number" value={settings.productionConfig.workingHoursPerDay} onChange={(e) => updateProdConfig('workingHoursPerDay', parseFloat(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-8">
+                        <StringListEditor title={t('set.qcReasons')} items={settings.qcRejectReasons} onUpdate={(items) => setSettings(prev => ({...prev, qcRejectReasons: items}))} placeholder={t('set.newItemPlaceholder')} />
+                        <StringListEditor title={t('set.prodSteps')} items={settings.productionSteps} onUpdate={(items) => setSettings(prev => ({...prev, productionSteps: items}))} placeholder={t('set.newItemPlaceholder')} />
+                        <StringListEditor title={t('set.machineStatus')} items={settings.machineStatuses} onUpdate={(items) => setSettings(prev => ({...prev, machineStatuses: items}))} placeholder={t('set.newItemPlaceholder')} />
+                        <StringListEditor title={t('set.roles')} items={settings.departments} onUpdate={(items) => setSettings(prev => ({...prev, departments: items}))} placeholder={t('set.newItemPlaceholder')} />
+                        
+                        <div className="md:hidden">
+                            <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-4 rounded-xl font-bold shadow-md transition-all">
+                                <Save size={20} /> {t('set.saveAll')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    {/* Backup & Restore */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                        <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                             <Database className="text-blue-500" size={20}/> สำรองและกู้คืนข้อมูล (Backup & Restore)
+                        </h3>
+                        <p className="text-sm text-slate-500 mb-6">ดาวน์โหลดไฟล์ JSON เก็บไว้ หรือนำเข้าไฟล์เพื่อกู้คืนข้อมูล</p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button 
+                                onClick={handleExport}
+                                className="flex items-center justify-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-6 py-4 rounded-xl font-bold hover:bg-blue-100 transition-all"
+                            >
+                                <Download size={20} /> {t('set.export')} (Backup)
+                            </button>
+                            <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex items-center justify-center gap-2 bg-white text-slate-700 border border-slate-300 px-6 py-4 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                            >
+                                <Upload size={20} /> {t('set.import')} (Restore)
+                            </button>
+                            <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
+                        </div>
+                    </div>
+
+                    {/* Reset Controls - CHECKLIST STYLE */}
+                    <div className="bg-white rounded-xl border border-red-100 shadow-sm overflow-hidden relative">
+                         <div className="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
+                         <div className="p-6">
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                    <AlertOctagon className="text-red-500" size={20}/> โซนอันตราย (Danger Zone)
+                                </h3>
+                                <button 
+                                    onClick={() => toggleAll()} 
+                                    className="text-xs font-bold text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                                >
+                                    {Object.values(resetOptions).every(v=>v) ? 'Deselect All' : 'Select All (Start Fresh)'}
+                                </button>
+                            </div>
+                            <p className="text-sm text-slate-500 mb-6">เลือกรายการที่ต้องการล้างข้อมูลเพื่อเริ่มต้นใหม่ (รายชื่อสินค้าและพนักงานจะไม่ถูกลบ)</p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {resetItems.map(item => (
+                                    <div 
+                                        key={item.key}
+                                        onClick={() => toggleOption(item.key as keyof typeof resetOptions)}
+                                        className={`cursor-pointer border rounded-xl p-4 flex items-start gap-3 transition-all ${resetOptions[item.key as keyof typeof resetOptions] ? 'border-red-500 bg-red-50/50 ring-1 ring-red-200' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
+                                    >
+                                        <div className={`mt-0.5 transition-colors ${resetOptions[item.key as keyof typeof resetOptions] ? 'text-red-500' : 'text-slate-300'}`}>
+                                            {resetOptions[item.key as keyof typeof resetOptions] ? <CheckSquare size={20} /> : <Square size={20} />}
+                                        </div>
+                                        <div>
+                                            <h4 className={`font-bold text-sm mb-1 ${resetOptions[item.key as keyof typeof resetOptions] ? 'text-red-700' : 'text-slate-700'}`}>{item.label}</h4>
+                                            <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="mt-8 pt-6 border-t border-slate-100">
+                                <button 
+                                    onClick={executeReset}
+                                    className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white py-4 rounded-xl font-black shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-3"
+                                >
+                                    <RefreshCcw size={24} className="animate-in spin-in-180 duration-500" />
+                                    ยืนยันการล้างข้อมูลที่เลือก (Execute Reset)
+                                </button>
+                                <p className="text-center text-xs text-slate-400 mt-3">
+                                    * ระบบจะทำการล้างข้อมูลเฉพาะรายการที่ถูกติ๊กถูกเท่านั้น
+                                </p>
                             </div>
                          </div>
                     </div>
-
-                    {/* 2. Overhead Costs */}
-                    <CostListEditor 
-                        title={t('set.overhead')} 
-                        subtext="ค่าใช้จ่ายที่ไม่ใช่ค่าวัตถุดิบและค่าแรงโดยตรง"
-                        items={settings.overheadCosts} 
-                        onUpdate={(items) => setSettings(prev => ({...prev, overheadCosts: items}))}
-                        t={t}
-                    />
-
-                    {/* 3. Machine Depreciation */}
-                    <CostListEditor 
-                        title={t('set.depreciation')} 
-                        subtext="ค่าเสื่อมราคาของเครื่องจักรทั้งหมด (เฉลี่ยรายชั่วโมง)"
-                        items={settings.machineDepreciation} 
-                        onUpdate={(items) => setSettings(prev => ({...prev, machineDepreciation: items}))}
-                        t={t}
-                    />
-
-                    {/* 4. General Settings */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                         <h3 className="font-bold text-slate-800 mb-4">{t('set.general')}</h3>
-                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.regrind')}</label>
-                                <input 
-                                    type="number" 
-                                    value={settings.productionConfig.regrindPercentage}
-                                    onChange={(e) => updateProdConfig('regrindPercentage', parseFloat(e.target.value))}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.oeeHours')}</label>
-                                <input 
-                                    type="number" 
-                                    value={settings.productionConfig.workingHoursPerDay}
-                                    onChange={(e) => updateProdConfig('workingHoursPerDay', parseFloat(e.target.value))}
-                                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900"
-                                />
-                            </div>
-                        </div>
-                    </div>
                 </div>
-
-                {/* --- Right Column --- */}
-                <div className="space-y-8">
-                    
-                    {/* 1. QC Reasons */}
-                    <StringListEditor 
-                        title={t('set.qcReasons')} 
-                        items={settings.qcRejectReasons} 
-                        onUpdate={(items) => setSettings(prev => ({...prev, qcRejectReasons: items}))}
-                        placeholder={t('set.newItemPlaceholder')}
-                    />
-
-                    {/* 2. Production Steps */}
-                    <StringListEditor 
-                        title={t('set.prodSteps')} 
-                        items={settings.productionSteps} 
-                        onUpdate={(items) => setSettings(prev => ({...prev, productionSteps: items}))}
-                        placeholder={t('set.newItemPlaceholder')}
-                    />
-
-                    {/* 3. Machine Status */}
-                    <StringListEditor 
-                        title={t('set.machineStatus')} 
-                        items={settings.machineStatuses} 
-                        onUpdate={(items) => setSettings(prev => ({...prev, machineStatuses: items}))}
-                        placeholder={t('set.newItemPlaceholder')}
-                    />
-
-                    {/* 4. Roles/Departments */}
-                    <StringListEditor 
-                        title={t('set.roles')} 
-                        items={settings.departments} 
-                        onUpdate={(items) => setSettings(prev => ({...prev, departments: items}))}
-                        placeholder={t('set.newItemPlaceholder')}
-                    />
-
-                    {/* Data Management Section */}
-                    <div className="bg-slate-100 rounded-xl border border-slate-200 p-6 mt-8">
-                        <h3 className="font-bold text-slate-800 mb-4">{t('set.dataManagement')}</h3>
-                        <div className="flex gap-4">
-                            <button 
-                                onClick={() => fileInputRef.current?.click()}
-                                className="flex-1 bg-white border border-slate-300 text-slate-700 py-3 rounded-lg font-medium hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 transition-all flex items-center justify-center gap-2"
-                            >
-                                <Upload size={18} /> {t('set.import')}
-                            </button>
-                            <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
-                            
-                            <button 
-                                onClick={handleExport}
-                                className="flex-1 bg-white border border-slate-300 text-slate-700 py-3 rounded-lg font-medium hover:bg-green-50 hover:text-green-600 hover:border-green-200 transition-all flex items-center justify-center gap-2"
-                            >
-                                <Download size={18} /> {t('set.export')}
-                            </button>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-3 text-center">
-                            Use Import/Export for manual backup or transferring data between devices.
-                        </p>
-                    </div>
-
-                </div>
-            </div>
+            )}
         </div>
     );
 };
