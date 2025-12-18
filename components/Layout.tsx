@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { 
@@ -9,7 +10,12 @@ import {
   Briefcase,
   Factory,
   Box,
-  FileBarChart
+  FileBarChart,
+  User,
+  Bell,
+  Plus,
+  Moon,
+  Languages
 } from 'lucide-react';
 import { useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
@@ -28,7 +34,6 @@ const Layout: React.FC = () => {
   const [openMenus, setOpenMenus] = useState<string[]>(['sales', 'production', 'warehouse', 'management']);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Close sidebar on route change (for mobile)
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location]);
@@ -45,7 +50,6 @@ const Layout: React.FC = () => {
       key: 'sales', 
       icon: Briefcase,
       children: [
-        { path: '/po-docs', label: 'nav.poDocs' },
         { path: '/customers', label: 'nav.customers' },
         { path: '/orders', label: 'nav.orders' }
       ]
@@ -84,7 +88,7 @@ const Layout: React.FC = () => {
   ];
 
   const NavContent = () => (
-    <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
+    <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1.5 custom-scrollbar">
       {navStructure.map((item) => {
         const Icon = item.icon;
         if (!item.children) {
@@ -93,43 +97,43 @@ const Layout: React.FC = () => {
               key={item.key}
               to={item.path!}
               className={({ isActive }) =>
-                `flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors duration-200 mb-1 ${
-                  isActive ? 'bg-primary-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+                `flex items-center space-x-3 px-4 py-3 rounded-2xl transition-all duration-200 group ${
+                  isActive ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/20' : 'hover:bg-slate-800 text-slate-400'
                 }`
               }
             >
-              <Icon size={20} />
-              <span className="font-medium text-sm">{t(`nav.${item.key}`)}</span>
+              <Icon size={20} className={location.pathname === item.path ? 'text-white' : 'group-hover:text-primary-400'} />
+              <span className="font-bold text-sm tracking-wide">{t(`nav.${item.key}`)}</span>
             </NavLink>
           );
         }
 
         const isOpen = openMenus.includes(item.key);
-        const isChildActive = item.children.some(child => location.pathname.startsWith(child.path));
+        const isChildActive = item.children.some(child => location.pathname === child.path);
 
         return (
-          <div key={item.key} className="mb-1">
+          <div key={item.key} className="space-y-1">
             <button
               onClick={() => toggleMenu(item.key)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors duration-200 
-                ${isChildActive ? 'text-white bg-slate-800' : 'hover:bg-slate-800/50 hover:text-white text-slate-400'}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all duration-200 
+                ${isChildActive ? 'text-white' : 'hover:bg-slate-800/50 text-slate-400'}
               `}
             >
               <div className="flex items-center space-x-3">
-                <Icon size={20} />
-                <span className="font-medium text-sm">{t(`nav.${item.key}`)}</span>
+                <Icon size={20} className={isChildActive ? 'text-primary-400' : 'group-hover:text-primary-400'} />
+                <span className="font-bold text-sm tracking-wide">{t(`nav.${item.key}`)}</span>
               </div>
-              {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
             {isOpen && (
-              <div className="mt-1 ml-4 pl-3 border-l border-slate-700 space-y-1">
+              <div className="ml-4 pl-4 border-l border-slate-800 space-y-1 my-1">
                 {item.children.map(child => (
                   <NavLink
                     key={child.path}
                     to={child.path}
                     className={({ isActive }) =>
-                      `block px-3 py-2 rounded-md text-sm transition-colors ${
-                        isActive ? 'text-primary-400 bg-slate-800/50 font-medium' : 'text-slate-500 hover:text-slate-300'
+                      `block px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        isActive ? 'text-primary-400 bg-primary-400/10' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
                       }`
                     }
                   >
@@ -145,95 +149,89 @@ const Layout: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans print:bg-white overflow-hidden">
-      {/* Mobile Sidebar Overlay */}
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
+      {/* Mobile Overlay */}
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
-          onClick={() => setIsSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      {/* Sidebar - Desktop and Mobile (Drawer) */}
+      {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-300 ease-in-out
-        md:translate-x-0 md:static md:inset-auto
+        fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-300 ease-in-out
+        lg:translate-x-0 lg:static lg:inset-auto
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        print:hidden
       `}>
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center space-x-3 overflow-hidden">
-            <div className="h-8 w-8 rounded bg-primary-500 flex items-center justify-center text-white font-bold shrink-0">
-              {factory_settings?.name?.substring(0, 2) || "CT"}
+        <div className="p-8 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="h-10 w-10 rounded-2xl bg-primary-600 flex items-center justify-center text-white font-black shadow-lg shadow-primary-600/20">
+              CT
             </div>
-            <span className="font-bold text-white text-lg tracking-tight truncate">
-              {factory_settings?.name || "Factory OS"}
-            </span>
+            <div className="flex flex-col">
+              <span className="font-black text-white text-lg leading-tight">CT.ELECTRIC</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-[2px]">Factory OS</span>
+            </div>
           </div>
-          <button className="md:hidden text-slate-400 hover:text-white" onClick={() => setIsSidebarOpen(false)}>
+          <button className="lg:hidden text-slate-500 hover:text-white" onClick={() => setIsSidebarOpen(false)}>
             <X size={20} />
           </button>
         </div>
         
         <NavContent />
         
-        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
-          v2.0 • CT Electric
+        <div className="p-6 border-t border-slate-800">
+           <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+              <span>CT.ELECTRIC © 2025</span>
+           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 md:px-6 shrink-0 print:hidden">
-           <div className="flex items-center gap-3">
+        <header className="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-8 shrink-0">
+           <div className="flex items-center gap-6">
                 <button 
-                  className="p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg md:hidden"
+                  className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 rounded-2xl lg:hidden"
                   onClick={() => setIsSidebarOpen(true)}
                 >
                   <Menu size={24} />
                 </button>
-                <h1 className="text-lg md:text-xl font-bold text-slate-800 truncate">
-                    {(() => {
-                        for (const item of navStructure) {
-                            if (item.path === location.pathname) return t(`nav.${item.key}`);
-                            if (item.children) {
-                                const child = item.children.find(c => c.path === location.pathname);
-                                if (child) return t(child.label);
-                            }
-                        }
-                        return "Factory OS";
-                    })()}
-                </h1>
+                <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                   <NavLink to="/dashboard" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><LayoutDashboard size={20}/></NavLink>
+                   <NavLink to="/production" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><Factory size={20}/></NavLink>
+                   <NavLink to="/inventory" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><Box size={20}/></NavLink>
+                </div>
            </div>
 
-           <div className="flex items-center space-x-2 md:space-x-4">
-             {/* Language Switcher - Compact on mobile */}
-             <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+           <div className="flex items-center gap-3">
+             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5">
+                <Languages size={16} className="text-slate-400" />
                 {['th', 'en'].map((lang) => (
                     <button 
                         key={lang}
                         onClick={() => setLanguage(lang as any)} 
-                        className={`px-2 py-1 md:px-3 md:py-1 rounded-md text-[10px] md:text-xs font-bold uppercase transition-all ${language === lang ? 'bg-white shadow text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase transition-all ${language === lang ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                         {lang}
                     </button>
                 ))}
              </div>
-
-             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
-
-             <div className="flex items-center gap-2">
-               <span className="text-xs text-slate-500 hidden lg:inline">Admin</span>
-               <div className="h-8 w-8 md:h-9 md:w-9 bg-gradient-to-br from-primary-500 to-primary-700 text-white rounded-full flex items-center justify-center font-bold shadow-sm text-sm">
-                 A
-               </div>
+             
+             <div className="flex items-center gap-1 border-l border-slate-200 pl-4 ml-1">
+                <button className="p-2.5 text-slate-400 hover:bg-slate-100 rounded-2xl transition-all"><Moon size={20}/></button>
+                <button className="p-2.5 text-slate-400 hover:bg-slate-100 rounded-2xl transition-all"><Plus size={20}/></button>
+                <button className="p-2.5 text-slate-400 hover:bg-slate-100 rounded-2xl transition-all relative">
+                   <Bell size={20}/>
+                   <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-white"></span>
+                </button>
+             </div>
+             
+             <div className="h-10 w-10 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 hover:bg-slate-200 transition-all cursor-pointer">
+                <User size={20}/>
              </div>
            </div>
         </header>
 
-        {/* Dynamic Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50 print:p-0 print:bg-white print:overflow-visible custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[#fdfdfd]">
           <Outlet />
         </div>
       </main>

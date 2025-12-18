@@ -11,7 +11,10 @@ export interface Product {
   category: string;
   standardColor: string;
   salePrice: number;
-  bom: BOMItem[]; //สูตรการผลิต
+  bom: BOMItem[]; 
+  cycleTime?: number; // วินาที
+  laborAllocation?: number; // เปอร์เซ็นต์ (0-100)
+  profitMargin?: number; // เปอร์เซ็นต์กำไรที่ต้องการ
 }
 
 export interface PackingOrder {
@@ -54,6 +57,8 @@ export interface InventoryItem {
   unit?: string;
   costPerUnit?: number;
   reservedQuantity?: number; // ยอดจองผลิต
+  source?: 'Purchased' | 'Produced'; // แหล่งที่มา: ซื้อมา หรือ ผลิตเอง
+  category?: 'Material' | 'Component' | 'Finished'; // ประเภท: วัตถุดิบหลัก, ชิ้นส่วนประกอบ, สินค้าสำเร็จรูป
 }
 
 // Added missing CostItem interface for financial settings

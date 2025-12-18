@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
@@ -93,7 +94,7 @@ const Dashboard: React.FC = () => {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                    {molding_logs?.slice(0, 5).map((log) => (
+                    {molding_logs?.slice(0, 5)?.map((log) => (
                         <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4 font-medium text-slate-900">{log.jobId?.substring(0, 8)}...</td>
                             <td className="px-6 py-4 text-slate-700 max-w-[200px] truncate">{log.productName}</td>

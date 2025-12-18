@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -15,7 +16,7 @@ import Maintenance from './pages/Maintenance';
 import Shipping from './pages/Shipping';
 import Products from './pages/Products';
 import Analytics from './pages/Analytics';
-import ProductionOrderDocs from './pages/ProductionOrderDocs'; // IMPORT NEW PAGE
+import RawMaterialBOM from './pages/RawMaterialBOM';
 
 import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
@@ -72,7 +73,6 @@ const App: React.FC = () => {
       setIsLoading(true);
       try {
         const cloudData = await fetchFactoryData();
-        // Ensure production_documents exists in loaded data (migration for existing users)
         if (!cloudData.production_documents) {
             cloudData.production_documents = [];
         }
@@ -93,11 +93,7 @@ const App: React.FC = () => {
   const updateData = async (newData: FactoryData) => {
     setIsLoading(true);
     try {
-      // CRITICAL: Sanitize data BEFORE setting state.
-      // This prevents circular references or non-serializable objects (like Events/DOM nodes) 
-      // from entering the app state, which would crash JSON.stringify() in downstream components.
       const cleanData = sanitizeData(newData) as FactoryData;
-      
       setData(cleanData); 
       await saveFactoryData(cleanData);
       setError(null);
@@ -150,7 +146,6 @@ const App: React.FC = () => {
                 {/* Sales */}
                 <Route path="customers" element={<Customers />} />
                 <Route path="orders" element={<Orders />} />
-                <Route path="po-docs" element={<ProductionOrderDocs />} /> {/* NEW ROUTE */}
 
                 {/* Production */}
                 <Route path="machine-status" element={<Maintenance view="status" />} />
@@ -160,7 +155,7 @@ const App: React.FC = () => {
                 {/* Warehouse & QC */}
                 <Route path="qc" element={<QC />} />
                 <Route path="inventory" element={<Inventory />} />
-                <Route path="raw-materials" element={<Inventory defaultTab="raw" />} />
+                <Route path="raw-materials" element={<RawMaterialBOM />} />
                 <Route path="products" element={<Products />} />
                 <Route path="shipping" element={<Shipping />} />
                 <Route path="complaints" element={<ComingSoon title="Customer Complaints" />} />
