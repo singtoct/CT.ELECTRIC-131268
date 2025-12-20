@@ -22,7 +22,7 @@ import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
 import { fetchFactoryData, saveFactoryData, sanitizeData } from './services/firebase';
 import { getFactoryData as getLocalDefault } from './services/database';
-import { Construction, Key, ShieldCheck, Sparkles, WifiOff } from 'lucide-react';
+import { Construction, WifiOff } from 'lucide-react';
 
 // --- API Key Context ---
 interface ApiKeyContextType {
@@ -84,7 +84,6 @@ const App: React.FC = () => {
   
   // API Key State
   const [apiKey, setApiKeyState] = useState<string>(localStorage.getItem('gemini_api_key') || '');
-  const [showKeyModal, setShowKeyModal] = useState<boolean>(!localStorage.getItem('gemini_api_key'));
 
   // Initial Load
   useEffect(() => {
@@ -147,7 +146,6 @@ const App: React.FC = () => {
   const handleSaveApiKey = (key: string) => {
       localStorage.setItem('gemini_api_key', key);
       setApiKeyState(key);
-      setShowKeyModal(false);
   };
 
   if (isLoading && !data) {
@@ -211,51 +209,6 @@ const App: React.FC = () => {
               {isOffline && (
                   <div className="fixed bottom-4 left-4 bg-slate-800 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg z-50 opacity-80 hover:opacity-100 transition-opacity">
                       <WifiOff size={12} /> Offline Mode
-                  </div>
-              )}
-
-              {/* API Key Modal */}
-              {showKeyModal && (
-                  <div className="fixed inset-0 z-[1000] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
-                      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
-                          <div className="p-8 text-center">
-                              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mx-auto flex items-center justify-center text-white mb-6 shadow-lg shadow-purple-200">
-                                  <Sparkles size={32} />
-                              </div>
-                              <h2 className="text-2xl font-black text-slate-800 mb-2">ต้องใช้ Gemini API Key</h2>
-                              <p className="text-slate-500 text-sm mb-6">
-                                  คุณสมบัติ AI บางอย่างถูกปิดใช้งาน โปรดตั้งค่า API Key เพื่อเปิดใช้งานระบบอัจฉริยะ (เช่น การคำนวณราคา, จับคู่ BOM)
-                              </p>
-                              
-                              <div className="text-left space-y-2 mb-6">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Google Gemini API Key</label>
-                                  <div className="relative">
-                                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                                      <input 
-                                          type="password" 
-                                          placeholder="วาง Gemini API Key ของคุณที่นี่..." 
-                                          className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                          onKeyDown={(e) => {
-                                              if(e.key === 'Enter') handleSaveApiKey((e.target as HTMLInputElement).value);
-                                          }}
-                                      />
-                                  </div>
-                                  <p className="text-[10px] text-slate-400 text-center mt-2">
-                                      Key จะถูกบันทึกในเครื่องของคุณเท่านั้น (LocalStorage)
-                                  </p>
-                              </div>
-
-                              <button 
-                                  onClick={() => {
-                                      const input = document.querySelector('input[type="password"]') as HTMLInputElement;
-                                      if(input.value) handleSaveApiKey(input.value);
-                                  }}
-                                  className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                              >
-                                  <ShieldCheck size={20}/> บันทึก Key และเริ่มใช้งาน
-                              </button>
-                          </div>
-                      </div>
                   </div>
               )}
 

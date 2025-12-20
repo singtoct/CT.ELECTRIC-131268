@@ -1,8 +1,10 @@
+
 import React, { useState, useMemo } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
 import { Cpu, Clock, Calendar, FileText, BarChart3, AlertCircle, CheckCircle2, Plus, Filter, Edit2, Trash2, X, Save, Search } from 'lucide-react';
 import { MoldingLog } from '../types';
+import SearchableSelect from '../components/SearchableSelect';
 
 // Helper for generating ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -20,6 +22,10 @@ const Production: React.FC = () => {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLog, setEditingLog] = useState<Partial<MoldingLog> | null>(null);
+
+  // Pre-calculate options
+  const machineOptions = useMemo(() => factory_machines.map(m => ({ value: m.name, label: `${m.name} (${m.location})` })), [factory_machines]);
+  const orderOptions = useMemo(() => packing_orders.filter(o => o.status !== 'Cancelled').map(o => ({ value: o.id, label: `${o.lotNumber || 'No Lot'} - ${o.name}`, subLabel: `Remaining: ${(o.quantity || 0) - (o.quantityDelivered || 0)}` })), [packing_orders]);
 
   // --- Logic 1: Overall Active PO Progress ---
   const activeOrdersProgress = useMemo(() => {
@@ -66,18 +72,6 @@ const Production: React.FC = () => {
   const dailyLogs = useMemo(() => {
     return molding_logs?.filter(log => log.date === selectedDate) || [];
   }, [molding_logs, selectedDate]);
-
-  const dailyReportData = useMemo(() => {
-    // Grouping for summary view
-    const groupedData: Record<string, any> = {};
-
-    dailyLogs.forEach(log => {
-       // We will just list raw logs for editing in this version, 
-       // but keeping summary calculation if needed for footer
-    });
-    return dailyLogs;
-  }, [dailyLogs]);
-
 
   // --- Actions ---
 
@@ -139,8 +133,8 @@ const Production: React.FC = () => {
       setIsModalOpen(false);
   };
 
-  const handleOrderSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const orderId = e.target.value;
+  const handleOrderSelectChange = (val: any) => {
+      const orderId = val;
       const order = packing_orders.find(o => o.id === orderId);
       if (order) {
           setEditingLog(prev => ({
@@ -397,35 +391,26 @@ const Production: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Machine */}
-                    <div>
+                    {/* Machine - Using SearchableSelect */}
+                    <div className="relative">
                         <label className="block text-xs font-medium text-slate-500 mb-1">Machine</label>
-                        <select 
+                        <SearchableSelect 
+                            options={machineOptions}
                             value={editingLog.machine}
-                            onChange={e => setEditingLog({...editingLog, machine: e.target.value})}
-                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                        >
-                            {factory_machines.map(m => (
-                                <option key={m.id} value={m.name}>{m.name} ({m.location})</option>
-                            ))}
-                        </select>
+                            onChange={(val) => setEditingLog({...editingLog, machine: val})}
+                            placeholder="Select Machine..."
+                        />
                     </div>
 
-                    {/* Order Selection */}
-                    <div>
+                    {/* Order Selection - Using SearchableSelect */}
+                    <div className="relative">
                         <label className="block text-xs font-medium text-slate-500 mb-1">Production Order</label>
-                        <select 
-                            value={editingLog.orderId || ''}
+                        <SearchableSelect 
+                            options={orderOptions}
+                            value={editingLog.orderId}
                             onChange={handleOrderSelectChange}
-                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                        >
-                            <option value="">-- Select Order --</option>
-                            {packing_orders.filter(o => o.status !== 'Cancelled').map(o => (
-                                <option key={o.id} value={o.id}>
-                                    {o.lotNumber} - {o.name}
-                                </option>
-                            ))}
-                        </select>
+                            placeholder="Select Production Order..."
+                        />
                     </div>
 
                     {/* Output Quantity */}

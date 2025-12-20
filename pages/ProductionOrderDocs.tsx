@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useMemo } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
@@ -6,6 +7,7 @@ import {
     ChevronRight, PenTool, CheckCircle2, AlertTriangle, PackageSearch
 } from 'lucide-react';
 import { ProductionDocument, ProductionDocumentItem, MoldingLog, Product } from '../types';
+import SearchableSelect from '../components/SearchableSelect';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -18,6 +20,11 @@ const ProductionOrderDocs: React.FC = () => {
     const [view, setView] = useState<'list' | 'create' | 'view'>('list');
     const [search, setSearch] = useState('');
     const [currentDoc, setCurrentDoc] = useState<ProductionDocument | null>(null);
+
+    // Pre-calculate Product Options for Select
+    const productOptions = useMemo(() => 
+        factory_products.map(p => ({ value: p.name, label: p.name }))
+    , [factory_products]);
 
     // Function to calculate Material Requirements and check Stock
     const checkMaterialsAndBOM = (doc: ProductionDocument) => {
@@ -222,9 +229,14 @@ const ProductionOrderDocs: React.FC = () => {
                         {currentDoc.items.map((item, idx) => (
                             <div key={item.id} className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center gap-3 transition-all">
                                 <div className="hidden md:flex w-6 justify-center text-slate-300 font-bold text-xs">{idx + 1}</div>
-                                <div className="flex-1 w-full">
+                                <div className="flex-1 w-full relative">
                                     <label className="md:hidden block text-[10px] font-bold text-slate-400 mb-1 uppercase">{t('inv.itemName')}</label>
-                                    <input type="text" placeholder="Product Name..." value={item.productName} onChange={e => updateItem(idx, 'productName', e.target.value)} className="w-full border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm" />
+                                    <SearchableSelect 
+                                        options={productOptions}
+                                        value={item.productName}
+                                        onChange={(val) => updateItem(idx, 'productName', val)}
+                                        placeholder="Product Name..."
+                                    />
                                 </div>
                                 <div className="grid grid-cols-2 md:flex md:w-auto gap-3 w-full">
                                     <div className="md:w-24">

@@ -8,7 +8,7 @@ import {
     Loader2
 } from 'lucide-react';
 import { Product, BOMItem } from '../types';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -36,7 +36,7 @@ const Products: React.FC = () => {
     setCurrentProduct({ 
         ...prod, 
         bom: prod.bom || [],
-        cycleTime: prod.cycleTime || 4,
+        cycleTimeSeconds: prod.cycleTimeSeconds || 4,
         laborAllocation: prod.laborAllocation || 100,
         profitMargin: prod.profitMargin || 30
     });
@@ -45,20 +45,55 @@ const Products: React.FC = () => {
 
   const handleAiSuggestPrice = async (prod: Product) => {
     if (!apiKey) {
-        alert("กรุณาใส่ API Key ก่อนใช้งานฟีเจอร์นี้");
+        alert("กรุณาใส่ API Key ในหน้า Settings ก่อนใช้งานฟีเจอร์นี้");
         return;
     }
     setIsAiCalculating(true);
     try {
         const ai = new GoogleGenAI({ apiKey: apiKey });
         const cost = calculateProductCost(prod);
-        const prompt = `Calculate suggested sale price for product: ${prod.name}. Production Cost: ${cost} THB. Desired Profit: ${prod.profitMargin}%. Market factor: High. Return only a number.`;
-        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-        const suggested = parseFloat(response.text.match(/\d+\.?\d*/)?.[0] || "0");
         
-        setCurrentProduct(prev => prev ? { ...prev, salePrice: suggested } : null);
+        // Structured Prompt for Gemini
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Analyze pricing for product: "${prod.name}" (Category: ${prod.category}). 
+                       Production Cost: ${cost} THB. 
+                       Target Profit Margin: ${prod.profitMargin}%. 
+                       Context: Factory manufacturing plastic electrical equipment in Thailand.
+                       Task: Calculate a recommended sale price considering the margin and local market competitiveness. Provide a short justification in Thai.`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        recommendedPrice: { type: Type.NUMBER, description: "The suggested selling price in THB" },
+                        breakEvenPrice: { type: Type.NUMBER, description: "The break-even price (production cost)" },
+                        justification: { type: Type.STRING, description: "Reasoning for the price based on cost and market factors (in Thai)" }
+                    },
+                    required: ["recommendedPrice", "breakEvenPrice", "justification"]
+                }
+            }
+        });
+
+        const result = JSON.parse(response.text || "{}");
+        
+        if (result.recommendedPrice) {
+            setCurrentProduct(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    salePrice: result.recommendedPrice,
+                    aiPriceRecommendation: {
+                        recommendedPrice: result.recommendedPrice,
+                        breakEvenPrice: result.breakEvenPrice || cost,
+                        justification: result.justification || "Calculated by AI based on cost and margin.",
+                    }
+                };
+            });
+        }
     } catch (e) { 
-        alert("AI Suggestion failed: " + e); 
+        console.error("AI Error:", e);
+        alert("AI Suggestion failed. Please check your API Key and try again."); 
     } finally { 
         setIsAiCalculating(false); 
     }
@@ -133,7 +168,8 @@ const Products: React.FC = () => {
                     {filteredProducts.map((prod) => {
                         const cost = calculateProductCost(prod);
                         const profit = prod.salePrice - cost;
-                        const suggestedPrice = cost * (1 + (prod.profitMargin || 30) / 100);
+                        // Use stored recommendation or calc simple margin
+                        const suggestedPrice = prod.aiPriceRecommendation?.recommendedPrice || (cost * (1 + (prod.profitMargin || 30) / 100));
 
                         return (
                             <tr key={prod.id} className="hover:bg-slate-50/30 transition-colors group">
@@ -154,7 +190,7 @@ const Products: React.FC = () => {
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-6 py-6 text-right font-mono font-black text-slate-500 text-base">฿{cost.toFixed(4)}</td>
+                                <td className="px-6 py-6 text-right font-mono font-black text-slate-500 text-base">฿{cost.toFixed(2)}</td>
                                 <td className="px-6 py-6 text-right">
                                     <div className="flex flex-col items-end">
                                         <span className={`font-black font-mono text-base ${profit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>฿{profit.toFixed(2)}</span>
@@ -163,8 +199,10 @@ const Products: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-6 text-right">
                                     <div className="flex items-center justify-end gap-3 group/ai">
-                                        <span className="font-mono font-black text-primary-700 text-lg">฿{suggestedPrice.toFixed(2)}</span>
-                                        <RefreshCw size={14} className="text-slate-300 cursor-pointer hover:text-primary-600 transition-all hover:rotate-180" />
+                                        <span className={`font-mono font-black text-lg ${prod.aiPriceRecommendation ? 'text-purple-600' : 'text-slate-400'}`}>
+                                            ฿{suggestedPrice.toFixed(2)}
+                                        </span>
+                                        {prod.aiPriceRecommendation && <Sparkles size={14} className="text-purple-500" />}
                                     </div>
                                 </td>
                                 <td className="px-10 py-6 text-right">
@@ -184,7 +222,7 @@ const Products: React.FC = () => {
       {/* Edit Product Modal */}
       {isModalOpen && currentProduct && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300 max-h-[90vh]">
             <div className="px-10 py-8 flex justify-between items-center border-b border-slate-100 bg-slate-50/30">
                <div>
                    <h3 className="text-2xl font-black text-slate-800 tracking-tight">แก้ไขข้อมูลสินค้า</h3>
@@ -220,7 +258,7 @@ const Products: React.FC = () => {
                         <div className="space-y-2">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ต้นทุนรวม (อ้างอิงจาก BOM)</label>
                             <div className="w-full px-6 py-4 border border-slate-200 rounded-2xl bg-white font-black text-slate-500 font-mono text-xl">
-                                ฿{calculateProductCost(currentProduct).toFixed(4)}
+                                ฿{calculateProductCost(currentProduct).toFixed(2)}
                             </div>
                         </div>
                     </div>
@@ -236,18 +274,41 @@ const Products: React.FC = () => {
                         <div className="space-y-2">
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ราคาขาย (ต่อหน่วย)</label>
-                                <button onClick={() => handleAiSuggestPrice(currentProduct)} disabled={isAiCalculating} className="text-[10px] font-black text-purple-600 hover:underline flex items-center gap-1">
-                                    {isAiCalculating ? <Loader2 className="animate-spin" size={10}/> : <Sparkles size={10}/>} ให้ AI แนะนำราคา
+                                <button onClick={() => handleAiSuggestPrice(currentProduct)} disabled={isAiCalculating} className="text-[10px] font-black text-purple-600 hover:underline flex items-center gap-1 transition-all hover:scale-105 active:scale-95">
+                                    {isAiCalculating ? <Loader2 className="animate-spin" size={12}/> : <Sparkles size={12}/>} AI Analysis & Suggestion
                                 </button>
                             </div>
                             <input type="number" value={currentProduct.salePrice} onChange={e => setCurrentProduct({...currentProduct, salePrice: parseFloat(e.target.value) || 0})} className="w-full px-6 py-4 border border-slate-200 rounded-2xl bg-white font-black text-slate-800 text-2xl focus:border-primary-500 transition-all outline-none font-mono" />
                         </div>
                     </div>
 
+                    {/* AI Recommendation Box */}
+                    {currentProduct.aiPriceRecommendation && (
+                        <div className="p-6 bg-purple-50 rounded-2xl border border-purple-100 shadow-sm animate-in zoom-in duration-300">
+                             <div className="flex items-center gap-2 mb-3 text-purple-700 font-black">
+                                <Sparkles size={16} /> AI Pricing Analysis
+                             </div>
+                             <div className="text-sm text-slate-700 space-y-2">
+                                <div className="flex justify-between border-b border-purple-100 pb-2">
+                                    <span className="font-bold">Break-Even Price:</span>
+                                    <span className="font-mono font-bold text-slate-500">฿{currentProduct.aiPriceRecommendation.breakEvenPrice.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-purple-100 pb-2">
+                                    <span className="font-bold">Recommended Price:</span>
+                                    <span className="font-mono font-bold text-green-600">฿{currentProduct.aiPriceRecommendation.recommendedPrice.toFixed(2)}</span>
+                                </div>
+                                <div>
+                                    <span className="font-bold block mb-1">AI Reasoning:</span>
+                                    <p className="text-xs leading-relaxed text-slate-600 italic">"{currentProduct.aiPriceRecommendation.justification}"</p>
+                                </div>
+                             </div>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-2">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cycle Time (วินาที)</label>
-                            <input type="number" value={currentProduct.cycleTime} onChange={e => setCurrentProduct({...currentProduct, cycleTime: parseInt(e.target.value) || 0})} className="w-full px-6 py-4 border border-slate-200 rounded-2xl bg-white font-black text-slate-800 focus:border-primary-500 transition-all outline-none" />
+                            <input type="number" value={currentProduct.cycleTimeSeconds} onChange={e => setCurrentProduct({...currentProduct, cycleTimeSeconds: parseInt(e.target.value) || 0})} className="w-full px-6 py-4 border border-slate-200 rounded-2xl bg-white font-black text-slate-800 focus:border-primary-500 transition-all outline-none" />
                         </div>
                         <div className="space-y-2">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">การปันส่วนแรงงาน (%)</label>
@@ -259,7 +320,7 @@ const Products: React.FC = () => {
                 <div className="flex items-center gap-3 p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
                     <TrendingUp className="text-emerald-600" size={24}/>
                     <div>
-                        <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">คาดการณ์กำไร</div>
+                        <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">คาดการณ์กำไรสุทธิ</div>
                         <div className="text-xl font-black text-emerald-700 font-mono">฿{(currentProduct.salePrice - calculateProductCost(currentProduct)).toFixed(2)} / ชิ้น</div>
                     </div>
                 </div>

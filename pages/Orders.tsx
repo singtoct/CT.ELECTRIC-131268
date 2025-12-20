@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
@@ -7,6 +8,7 @@ import {
     Database, Droplet
 } from 'lucide-react';
 import { ProductionDocument, ProductionDocumentItem, MoldingLog, Product } from '../types';
+import SearchableSelect from '../components/SearchableSelect';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -21,6 +23,11 @@ const Orders: React.FC = () => {
   const [isPrintViewOpen, setIsPrintViewOpen] = useState(false);
   const [currentDoc, setCurrentDoc] = useState<ProductionDocument | null>(null);
   const [expandedDocs, setExpandedDocs] = useState<string[]>([]);
+
+  // Pre-calculate Product Options
+  const productOptions = useMemo(() => 
+    factory_products.map(p => ({ value: p.name, label: p.name }))
+  , [factory_products]);
 
   // Function to calculate Material Requirements for a specific PO
   const calculateBOMRequirements = (doc: ProductionDocument) => {
@@ -264,12 +271,18 @@ const Orders: React.FC = () => {
                           <div className="space-y-3">
                               {currentDoc.items.map((item, idx) => (
                                   <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-4 items-end group">
-                                      <div className="md:col-span-5">
+                                      <div className="md:col-span-5 relative">
                                           <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">ชื่อสินค้า (จะนำไปเช็ค BOM อัตโนมัติ)</label>
-                                          <input type="text" list="product-list" value={item.productName} onChange={e => { const newItems = [...currentDoc.items]; newItems[idx].productName = e.target.value; setCurrentDoc({...currentDoc, items: newItems}); }} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" placeholder="ระบุชื่อสินค้า..." />
-                                          <datalist id="product-list">
-                                              {factory_products.map(p => <option key={p.id} value={p.name} />)}
-                                          </datalist>
+                                          <SearchableSelect 
+                                              options={productOptions}
+                                              value={item.productName}
+                                              onChange={(val) => { 
+                                                  const newItems = [...currentDoc.items]; 
+                                                  newItems[idx].productName = val; 
+                                                  setCurrentDoc({...currentDoc, items: newItems}); 
+                                              }}
+                                              placeholder="ระบุชื่อสินค้า..."
+                                          />
                                       </div>
                                       <div className="md:col-span-2">
                                           <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">จำนวน</label>

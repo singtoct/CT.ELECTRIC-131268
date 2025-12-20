@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useFactoryActions, useFactoryData } from '../App';
+import { useFactoryActions, useFactoryData, useApiKey } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
     Save, Plus, Trash2, Upload, Download, Loader2, Check, 
     AlertTriangle, RefreshCcw, Database, Settings as SettingsIcon,
     FileText, Box, Activity, AlertOctagon, CheckSquare, Square,
-    Truck, ClipboardCheck, Cpu, Layers
+    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles
 } from 'lucide-react';
 import { FactoryData, FactorySettings, CostItem } from '../types';
 
@@ -154,14 +154,20 @@ const Settings: React.FC = () => {
     const { updateData, isLoading: isActionLoading } = useFactoryActions();
     const allData = useFactoryData();
     const { factory_settings } = allData;
+    const { apiKey, setApiKey } = useApiKey();
 
     // Initialize with safe defaults
     const defaultSettings: FactorySettings = {
+        id: 'main',
         name: 'CT Electric',
         companyInfo: { name: '', address: '', taxId: '', phone: '', email: '', logoUrl: '' },
         productionConfig: { shifts: [], lowStockThreshold: 0, vatRate: 7, regrindPercentage: 0, workingHoursPerDay: 8 },
         qcRejectReasons: [],
         machineStatuses: [],
+        productionStatuses: [], // Added
+        roles: [], // Added
+        overheadRatePerHour: 0, // Added
+        depreciationCostPerHour: 0, // Added
         productionSteps: [],
         departments: [],
         overheadCosts: [],
@@ -171,6 +177,7 @@ const Settings: React.FC = () => {
     const [settings, setSettings] = useState<FactorySettings>(defaultSettings);
     const [msg, setMsg] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'general' | 'reset'>('general');
+    const [tempKey, setTempKey] = useState(apiKey);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Reset Options State
@@ -193,6 +200,10 @@ const Settings: React.FC = () => {
             });
         }
     }, [factory_settings]);
+
+    useEffect(() => {
+        setTempKey(apiKey);
+    }, [apiKey]);
 
     const handleSave = async () => {
         try {
@@ -383,6 +394,39 @@ const Settings: React.FC = () => {
                                         <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.logoUrl')}</label>
                                         <input type="text" value={settings.companyInfo.logoUrl} onChange={(e) => updateCompany('logoUrl', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
                                     </div>
+                                </div>
+                             </div>
+                        </div>
+
+                         {/* AI Key Section */}
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
+                             <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                                <Sparkles size={100} />
+                             </div>
+                             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                <Key className="text-purple-500" size={20}/> Gemini AI Configuration
+                             </h3>
+                             <div className="space-y-4 relative z-10">
+                                <p className="text-xs text-slate-500">
+                                    ตั้งค่า Google Gemini API Key เพื่อเปิดใช้งานฟีเจอร์อัจฉริยะ (AI) ภายในระบบ เช่น การวิเคราะห์ BOM หรือการแนะนำราคา
+                                </p>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="password" 
+                                        value={tempKey} 
+                                        onChange={(e) => setTempKey(e.target.value)} 
+                                        placeholder="Enter your Gemini API Key..."
+                                        className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-slate-50 text-slate-900" 
+                                    />
+                                    <button 
+                                        onClick={() => { setApiKey(tempKey); setMsg("API Key Saved"); setTimeout(() => setMsg(null), 3000); }}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors"
+                                    >
+                                        Save Key
+                                    </button>
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                    * Key จะถูกบันทึกใน Browser ของคุณเท่านั้น (LocalStorage)
                                 </div>
                              </div>
                         </div>

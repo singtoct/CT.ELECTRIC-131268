@@ -1,22 +1,5 @@
 
-
-export interface BOMItem {
-  materialId: string;
-  materialName: string;
-  quantityPerUnit: number; // e.g., 0.05 kg per 1 product unit
-}
-
-export interface Product {
-  id: string;
-  name: string;
-  category: string;
-  standardColor: string;
-  salePrice: number;
-  bom: BOMItem[]; 
-  cycleTime?: number; // วินาที
-  laborAllocation?: number; // เปอร์เซ็นต์ (0-100)
-  profitMargin?: number; // เปอร์เซ็นต์กำไรที่ต้องการ
-}
+// --- Base Interfaces ---
 
 export interface PackingOrder {
   id: string;
@@ -27,10 +10,10 @@ export interface PackingOrder {
   dueDate: string;
   stock?: number;
   salePrice: number;
-  status?: 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | 'Ready';
+  status?: string; // 'Open' | 'In Progress' | 'Completed' | 'Cancelled' | 'Ready'
   quantityDelivered?: number;
   lotNumber?: string;
-  docId?: string; // Link to ProductionDocument
+  docId?: string; 
 }
 
 export interface MoldingLog {
@@ -43,44 +26,49 @@ export interface MoldingLog {
   shift: string;
   lotNumber: string;
   date: string;
-  status: string; // เช่น 'รอฉีด', 'รอประกอบ', 'รอแพ็ค', 'รอ QC', 'เสร็จสิ้น'
+  status: string; 
   productId: string;
   machine: string;
   quantityProduced: number;
   targetQuantity?: number;
   priority?: number;
+  hours?: number; 
+  materialCost?: number;
+  startTime?: string;
 }
 
 export interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
-  unit?: string;
+  unit: string;
   costPerUnit?: number;
-  reservedQuantity?: number; // ยอดจองผลิต
-  source?: 'Purchased' | 'Produced'; // แหล่งที่มา: ซื้อมา หรือ ผลิตเอง
-  category?: 'Material' | 'Component' | 'Finished'; // ประเภท: วัตถุดิบหลัก, ชิ้นส่วนประกอบ, สินค้าสำเร็จรูป
+  reservedQuantity?: number;
+  source?: 'Purchased' | 'Produced';
+  category?: string;
+  defaultSupplierId?: string;
 }
 
-// Added missing CostItem interface for financial settings
-export interface CostItem {
-  id: string;
-  name: string;
-  value: number;
-  unit?: string;
-}
-
-// Added missing Machine interface for production monitoring
 export interface Machine {
   id: string;
   name: string;
   status: string;
   location: string;
   workingHoursPerDay: number;
+  lastStartedAt?: string;
+}
+
+export interface CostItem {
+  id: string;
+  name: string;
+  value: number;
+  unit?: string;
+  costPerHour?: number;
 }
 
 export interface FactorySettings {
-  name: string; // Added missing name property
+  id: string;
+  name: string;
   companyInfo: {
     name: string;
     address: string;
@@ -88,25 +76,193 @@ export interface FactorySettings {
     phone: string;
     email: string;
     logoUrl: string;
+    currentUserRoleId?: string;
   };
-  productionConfig: {
+  productionConfig?: {
     shifts: string[]; 
     lowStockThreshold: number; 
     vatRate: number;
     regrindPercentage: number;
     workingHoursPerDay: number;
   };
-  qcRejectReasons: string[];
+  regrindPercentage?: number; // Root level in JSON
+  workingHoursPerDay?: number; // Root level in JSON
+  
+  productionStatuses: string[];
+  qcFailureReasons?: string[];
+  qcRejectReasons?: string[];
   machineStatuses: string[];
-  productionSteps: string[]; // ['รอฉีด', 'รอประกอบ', 'รอแพ็ค', 'รอ QC', 'เสร็จสิ้น']
-  departments: string[];
-  overheadCosts: CostItem[]; // Updated from any[] to use CostItem
-  machineDepreciation: CostItem[]; // Updated from any[] to use CostItem
+  productionSteps?: string[];
+  departments?: string[];
+  
+  // Costs can come from overheadCosts (App) or overheadItems (JSON)
+  overheadCosts: CostItem[]; 
+  overheadItems?: { name: string; costPerHour: number }[];
+  
+  machineDepreciation: CostItem[];
+  depreciationItems?: { name: string; costPerHour: number }[];
+  
+  roles: { id: string; name: string }[];
+  dashboardLayouts?: any;
+  overheadRatePerHour: number;
+  depreciationCostPerHour: number;
+}
+
+// --- Product & BOM ---
+
+// Used within factory_products in the App logic
+export interface BOMItem {
+  materialId: string;
+  materialName: string;
+  quantityPerUnit: number;
+}
+
+// JSON Structure for packing_boms
+export interface BOMComponent {
+  quantity: number;
+  rawMaterialId: string;
+}
+
+export interface PackingBOM {
+  id: string;
+  productName: string;
+  components: BOMComponent[];
+}
+
+export interface AiPriceSource {
+    title: string;
+    uri: string;
+}
+
+export interface AiPriceRecommendation {
+    breakEvenPrice: number;
+    recommendedPrice: number;
+    justification: string;
+    marketMinPrice?: number;
+    marketMaxPrice?: number;
+    sources?: AiPriceSource[];
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  color: string;
+  cycleTimeSeconds: number;
+  laborAllocation: number;
+  createsRawMaterialId?: string;
+  
+  // Financials
+  totalCost: number;
+  overheadCost: number;
+  laborCost: number;
+  materialCost: number;
+  profit: number;
+  salePrice: number;
+  cost?: number;
+  
+  productType: string;
+  category?: string; 
+  standardColor?: string;
+  profitMargin?: number;
+  
+  aiPriceRecommendation?: AiPriceRecommendation;
+  
+  // App expects this populated, JSON might separate it
+  bom?: BOMItem[]; 
+}
+
+// --- New Modules from JSON ---
+
+export interface ProductionQueueItem {
+  id: string;
+  productId: string;
+  productName: string;
+  quantityGoal: number;
+  lotNumber: string;
+  machineId: string;
+  priority: number;
+  operatorName: string;
+  quantityProduced: number;
+  addedDate: string;
+  status: string;
+  orderId?: string;
+}
+
+export interface MaintenanceLog {
+  id: string;
+  technician: string;
+  type: string;
+  date: string;
+  downtimeHours: number;
+  description: string;
+  machineId: string;
+}
+
+export interface FactorySupplier {
+  id: string;
+  phone: string;
+  name: string;
+  contactPerson: string;
+}
+
+export interface PurchaseOrderItem {
+  quantity: number;
+  rawMaterialId: string;
+  unitPrice: number;
+}
+
+export interface FactoryPurchaseOrder {
+  id: string;
+  status: string;
+  poNumber: string;
+  orderDate: string;
+  supplierId: string;
+  expectedDate: string;
+  items: PurchaseOrderItem[];
+}
+
+export interface FactoryCustomer {
+  id: string;
+  address: string;
+  contactPerson: string;
+  phone: string;
+  name: string;
+}
+
+export interface PackingStation {
+  id: string;
+  status: string;
+  name: string;
+}
+
+export interface PackingLog {
+    id: string;
+    packerName: string;
+    quantity: number;
+    name: string;
+    date: string;
+}
+
+export interface PackingQCEntry {
+    id: string;
+    productName: string;
+    employeeName: string;
+    lotNumber: string;
+    moldingLogId: string;
+    sourceDate: string;
+    status: string;
+    orderId: string;
+    unit: string;
+    quantity: number;
+    qcInspector?: string;
+    reasons?: string[];
+    qcDate?: string;
+    notes?: string;
 }
 
 export interface ProductionDocumentItem {
     id: string;
-    productId: string; // Link to Product
+    productId: string;
     productName: string;
     quantity: number;
     unit: string;
@@ -119,22 +275,61 @@ export interface ProductionDocument {
     docNumber: string;
     date: string;
     customerName: string;
-    status: 'Draft' | 'Material Checking' | 'Approved' | 'In Progress' | 'Completed';
+    status: string;
     items: ProductionDocumentItem[];
     createdBy: string;
     note?: string;
-    materialShortage?: boolean; // บอกว่าวัตถุดิบพอไหม
+    materialShortage?: boolean;
 }
+
+export interface FactoryEmployee {
+    id: string;
+    roleId: string;
+    status: string;
+    includeInWageCalculation?: boolean;
+    department: string;
+    dailyWage: number;
+    phone: string;
+    name: string;
+    address: string;
+    hireDate: string;
+}
+
+export interface MachineDailyLog {
+  id: string;
+  date: string;
+  jobId: string;
+  machineId: string;
+  hours: number;
+}
+
+// --- Main Data Store ---
 
 export interface FactoryData {
   packing_orders: PackingOrder[];
   molding_logs: MoldingLog[];
-  packing_inventory: InventoryItem[];
-  factory_machines: Machine[]; // Updated from any[] to use Machine
-  packing_employees: any[];
-  packing_qc_entries: any[];
-  packing_raw_materials: InventoryItem[];
+  packing_inventory: InventoryItem[]; // Finished Goods
+  packing_raw_materials: InventoryItem[]; // Raw Materials
+  factory_machines: Machine[];
+  packing_employees: FactoryEmployee[];
+  packing_qc_entries: PackingQCEntry[];
   factory_products: Product[];
   factory_settings: FactorySettings;
-  production_documents: ProductionDocument[];
+  
+  // JSON Specific
+  packing_boms: PackingBOM[]; 
+  packing_logs: PackingLog[];
+  maintenance_logs: MaintenanceLog[];
+  factory_suppliers: FactorySupplier[];
+  factory_purchase_orders: FactoryPurchaseOrder[];
+  read_notifications: { ids: string[] };
+  factory_customers: FactoryCustomer[];
+  factory_complaints: any[];
+  production_queue: ProductionQueueItem[];
+  machine_daily_logs: MachineDailyLog[];
+  packing_stations: PackingStation[];
+  packing_queue: any[];
+  
+  // App Compatibility (might be derived or empty in raw JSON)
+  production_documents?: ProductionDocument[];
 }

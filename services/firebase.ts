@@ -24,8 +24,14 @@ const app = !firebase.apps.length
 const db = firebase.firestore(app);
 
 // Enable Offline Persistence (Best effort)
-db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-    console.debug('Firebase persistence disabled:', err.code);
+// Note: synchronizeTabs: true can cause "Write stream exhausted" errors if tabs fight for the lock. 
+// We disable it to be safe and prevent overloading the client-side queue.
+db.enablePersistence({ synchronizeTabs: false }).catch((err) => {
+    if (err.code === 'failed-precondition') {
+        console.warn('Persistence failed: Multiple tabs open.');
+    } else if (err.code === 'unimplemented') {
+        console.warn('Persistence not supported by browser.');
+    }
 });
 
 // Collection 'factory' -> Document 'main_data'
@@ -101,15 +107,47 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
   }
 };
 
-// Save Data
-export const saveFactoryData = async (data: FactoryData): Promise<void> => {
+// --- Debounced Save Logic ---
+// Prevents "Write stream exhausted" errors by coalescing rapid updates into a single write.
+
+let pendingSave: { data: any, resolve: () => void, reject: (e: any) => void } | null = null;
+let saveTimer: any = null;
+
+const executeSave = async () => {
+  if (!pendingSave) return;
+  
+  const { data, resolve } = pendingSave;
+  pendingSave = null; // Clear pending so new ones can queue
+  
   try {
-    const cleanData = sanitizeData(data);
-    const finalData = JSON.parse(JSON.stringify(cleanData));
-    // We don't await this if we want optimistic UI updates, but here we wait to confirm save
-    await DATA_DOC_REF.set(finalData);
+    await DATA_DOC_REF.set(data);
+    console.log("✅ Cloud Sync Complete");
+    resolve();
   } catch (error) {
-    console.warn("❌ Error writing document (likely offline): ", error);
-    // Don't throw here to prevent disrupting the UI
+    console.warn("❌ Cloud Sync Failed (likely offline/throttled):", error);
+    // Resolve anyway to prevent blocking the UI; the data is safely in local state
+    resolve(); 
   }
+};
+
+// Save Data (Debounced)
+export const saveFactoryData = async (data: FactoryData): Promise<void> => {
+  const cleanData = sanitizeData(data);
+  const finalData = JSON.parse(JSON.stringify(cleanData));
+
+  return new Promise((resolve, reject) => {
+    // If there is a pending save waiting to fire, resolve it immediately (skip it)
+    // effectively replacing it with this newer data.
+    if (pendingSave) {
+        pendingSave.resolve();
+    }
+
+    pendingSave = { data: finalData, resolve, reject };
+
+    // Reset timer
+    if (saveTimer) clearTimeout(saveTimer);
+    
+    // Wait 3 seconds (increased from 2s) to be safer against write exhaustion
+    saveTimer = setTimeout(executeSave, 3000);
+  });
 };
