@@ -9,7 +9,6 @@ import Inventory from './pages/Inventory';
 import QC from './pages/QC';
 import Employees from './pages/Employees';
 import Settings from './pages/Settings';
-// New Pages
 import Kanban from './pages/Kanban';
 import Customers from './pages/Customers';
 import Maintenance from './pages/Maintenance';
@@ -17,12 +16,15 @@ import Shipping from './pages/Shipping';
 import Products from './pages/Products';
 import Analytics from './pages/Analytics';
 import RawMaterialBOM from './pages/RawMaterialBOM';
+import Purchasing from './pages/Purchasing';
+import WarehouseMap from './pages/WarehouseMap';
+import Reports from './pages/Reports';
 
 import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
 import { fetchFactoryData, saveFactoryData, sanitizeData } from './services/firebase';
 import { getFactoryData as getLocalDefault } from './services/database';
-import { Construction, WifiOff } from 'lucide-react';
+import { Construction, WifiOff, CloudOff, AlertTriangle } from 'lucide-react';
 
 // --- API Key Context ---
 interface ApiKeyContextType {
@@ -62,7 +64,6 @@ export const useFactoryActions = () => {
   return context;
 };
 
-// --- Placeholder Component for Future Modules ---
 const ComingSoon: React.FC<{title?: string}> = ({title}) => {
   const { t } = useTranslation();
   return (
@@ -80,51 +81,56 @@ const App: React.FC = () => {
   const [data, setData] = useState<FactoryData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
-  
-  // API Key State
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [apiKey, setApiKeyState] = useState<string>(localStorage.getItem('gemini_api_key') || '');
 
-  // Initial Load
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   useEffect(() => {
     const initData = async () => {
       setIsLoading(true);
       try {
-        const cloudData = await fetchFactoryData();
-        if (!cloudData.production_documents) {
-            cloudData.production_documents = [];
+        const loadedData = await fetchFactoryData();
+        if (!loadedData.production_documents) {
+            loadedData.production_documents = [];
         }
-        setData(cloudData);
+        // Ensure warehouse locations exist if not present in loaded data
+        if (!loadedData.warehouse_locations) {
+            const defaultData = getLocalDefault();
+            loadedData.warehouse_locations = defaultData.warehouse_locations || [];
+        }
+        setData(loadedData);
         setError(null);
-        setIsOffline(false);
       } catch (err) {
-        console.warn("Using local data (Offline Mode)");
-        // Fallback to local data seamlessly
+        console.error("Critical error loading data:", err);
         setData(getLocalDefault());
-        setIsOffline(true);
-        // Do NOT set error here to avoid blocking the UI
+        setError("Network error: Working in Offline Mode.");
       } finally {
         setIsLoading(false);
       }
     };
-
     initData();
   }, []);
 
   const updateData = async (newData: FactoryData) => {
-    setIsLoading(true);
+    const cleanData = sanitizeData(newData) as FactoryData;
+    setData(cleanData); 
     try {
-      const cleanData = sanitizeData(newData) as FactoryData;
-      setData(cleanData); 
       await saveFactoryData(cleanData);
       setError(null);
     } catch (err) {
-      console.error("Failed to save to Firebase:", err);
-      // Even if cloud save fails, we keep local state updated
-      setError("Changes saved locally only (Offline)");
+      console.warn("Failed to sync change with cloud:", err);
+      setError("Local save successful. Sync pending.");
       setTimeout(() => setError(null), 3000);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -137,7 +143,7 @@ const App: React.FC = () => {
       setError(null);
     } catch (err) {
       console.error("Failed to reset data:", err);
-      setError("Failed to reset data on cloud.");
+      setError("Failed to sync reset to cloud.");
     } finally {
       setIsLoading(false);
     }
@@ -151,13 +157,16 @@ const App: React.FC = () => {
   if (isLoading && !data) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-slate-50 text-slate-600 gap-4">
-        <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-        <p>Loading System...</p>
+        <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="text-center">
+            <p className="font-bold text-slate-800">Initializing CT Electric Factory OS</p>
+            <p className="text-xs text-slate-400 mt-1">Connecting to Secure Cloud Backend...</p>
+        </div>
       </div>
     );
   }
 
-  if (!data) return <div className="flex items-center justify-center h-screen text-red-500">System Error: Could not load data.</div>;
+  if (!data) return <div className="flex items-center justify-center h-screen text-red-500">System Error: Data could not be initialized.</div>;
 
   return (
     <LanguageProvider>
@@ -168,54 +177,48 @@ const App: React.FC = () => {
               <Routes>
                 <Route path="/" element={<Layout />}>
                   <Route index element={<Navigate to="/dashboard" replace />} />
-                  
-                  {/* Overview */}
                   <Route path="dashboard" element={<Dashboard />} />
-                  
-                  {/* Sales */}
                   <Route path="customers" element={<Customers />} />
                   <Route path="orders" element={<Orders />} />
-
-                  {/* Production */}
                   <Route path="machine-status" element={<Maintenance view="status" />} />
                   <Route path="kanban" element={<Kanban />} />
                   <Route path="production" element={<Production />} />
-                  
-                  {/* Warehouse & QC */}
                   <Route path="qc" element={<QC />} />
                   <Route path="inventory" element={<Inventory />} />
                   <Route path="raw-materials" element={<RawMaterialBOM />} />
                   <Route path="products" element={<Products />} />
                   <Route path="shipping" element={<Shipping />} />
                   <Route path="complaints" element={<ComingSoon title="Customer Complaints" />} />
-
-                  {/* Management */}
                   <Route path="employees" element={<Employees />} />
                   <Route path="maintenance" element={<Maintenance view="maintenance" />} />
-                  <Route path="purchasing" element={<ComingSoon title="Purchasing" />} />
-                  
-                  {/* Analytics Group */}
+                  <Route path="purchasing" element={<Purchasing />} />
+                  <Route path="warehouse-map" element={<WarehouseMap />} />
                   <Route path="analytics-material" element={<Analytics mode="material" />} />
                   <Route path="analytics-cost" element={<Analytics mode="cost" />} />
                   <Route path="analytics-profit" element={<Analytics mode="profit" />} />
                   <Route path="oee" element={<Analytics mode="oee" />} />
-                  
-                  <Route path="reports" element={<ComingSoon title="Reports" />} />
+                  <Route path="reports" element={<Reports />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
               </Routes>
               
-              {/* Offline Indicator */}
               {isOffline && (
-                  <div className="fixed bottom-4 left-4 bg-slate-800 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg z-50 opacity-80 hover:opacity-100 transition-opacity">
-                      <WifiOff size={12} /> Offline Mode
+                  <div className="fixed bottom-6 left-6 bg-slate-900 text-white px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-2xl z-50 border border-slate-800 animate-in slide-in-from-left-4">
+                      <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                      <CloudOff size={14} /> Offline Mode (Sync Paused)
                   </div>
               )}
 
               {error && (
-                <div className="fixed bottom-4 right-4 bg-amber-100 border border-amber-400 text-amber-800 px-4 py-3 rounded shadow-lg z-50 flex items-center gap-2 animate-in slide-in-from-bottom-2">
-                  <span>⚠️ {error}</span>
-                  <button onClick={() => setError(null)} className="font-bold ml-2">x</button>
+                <div className="fixed bottom-6 right-6 bg-amber-50 border border-amber-200 text-amber-800 px-5 py-3 rounded-2xl shadow-2xl z-50 flex items-center gap-3 animate-in slide-in-from-right-4 border-l-4 border-l-amber-500">
+                  <div className="bg-amber-100 p-1.5 rounded-lg">
+                      <AlertTriangle size={18} className="text-amber-600" />
+                  </div>
+                  <div className="flex flex-col">
+                      <span className="font-black text-xs uppercase tracking-wider">System Alert</span>
+                      <span className="text-sm font-bold">{error}</span>
+                  </div>
+                  <button onClick={() => setError(null)} className="font-bold ml-2 p-1 hover:bg-amber-100 rounded-lg">×</button>
                 </div>
               )}
             </HashRouter>

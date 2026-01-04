@@ -6,9 +6,10 @@ import {
     Save, Plus, Trash2, Upload, Download, Loader2, Check, 
     AlertTriangle, RefreshCcw, Database, Settings as SettingsIcon,
     FileText, Box, Activity, AlertOctagon, CheckSquare, Square,
-    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles
+    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles, X
 } from 'lucide-react';
 import { FactoryData, FactorySettings, CostItem } from '../types';
+import { sanitizeData } from '../services/firebase';
 
 // Helper Component for Simple Lists (Strings)
 const StringListEditor = ({ 
@@ -164,10 +165,10 @@ const Settings: React.FC = () => {
         productionConfig: { shifts: [], lowStockThreshold: 0, vatRate: 7, regrindPercentage: 0, workingHoursPerDay: 8 },
         qcRejectReasons: [],
         machineStatuses: [],
-        productionStatuses: [], // Added
-        roles: [], // Added
-        overheadRatePerHour: 0, // Added
-        depreciationCostPerHour: 0, // Added
+        productionStatuses: [], 
+        roles: [], 
+        overheadRatePerHour: 0, 
+        depreciationCostPerHour: 0, 
         productionSteps: [],
         departments: [],
         overheadCosts: [],
@@ -180,7 +181,6 @@ const Settings: React.FC = () => {
     const [tempKey, setTempKey] = useState(apiKey);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Reset Options State
     const [resetOptions, setResetOptions] = useState({
         orders: false,
         logs: false,
@@ -223,17 +223,22 @@ const Settings: React.FC = () => {
         setSettings(prev => ({ ...prev, productionConfig: { ...prev.productionConfig, [field]: value } }));
     };
 
-    // --- Data Management Functions ---
-
     const handleExport = () => {
-        const dataStr = JSON.stringify(allData, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `factory_data_${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        try {
+            // Aggressive sanitization before stringify to prevent "circular structure" errors
+            const cleanData = sanitizeData(allData);
+            const dataStr = JSON.stringify(cleanData, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `factory_data_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error("Export failed:", err);
+            alert("Export failed: Data structure contains non-serializable objects. Please try refreshing and try again.");
+        }
     };
 
     const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -248,12 +253,10 @@ const Settings: React.FC = () => {
                     setMsg("Data Imported Successfully!");
                     setTimeout(() => setMsg(null), 3000);
                 }
-            } catch (err) { alert("Invalid JSON"); }
+            } catch (err) { alert("Invalid JSON file"); }
         };
         reader.readAsText(file);
     };
-
-    // --- Reset Logic ---
 
     const toggleOption = (key: keyof typeof resetOptions) => {
         setResetOptions(prev => ({ ...prev, [key]: !prev[key] }));
@@ -277,11 +280,11 @@ const Settings: React.FC = () => {
     const executeReset = async () => {
         const selectedCount = Object.values(resetOptions).filter(v => v).length;
         if (selectedCount === 0) {
-            alert("กรุณาเลือกรายการที่ต้องการล้างข้อมูลอย่างน้อย 1 รายการ");
+            alert("กรุณาเลือกรายการที่ต้องการล้างข้อมูล");
             return;
         }
 
-        if (!window.confirm(`⚠️ ยืนยันการล้างข้อมูล ${selectedCount} รายการ?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return;
+        if (!window.confirm(`ยืนยันการล้างข้อมูล ${selectedCount} รายการ?`)) return;
 
         const newData = { ...allData };
 
@@ -289,39 +292,23 @@ const Settings: React.FC = () => {
             newData.packing_orders = [];
             newData.production_documents = [];
         }
-        
-        if (resetOptions.logs) {
-            newData.molding_logs = [];
-        }
-        
-        if (resetOptions.inventory) {
-            newData.packing_inventory = newData.packing_inventory.map(i => ({...i, quantity: 0}));
-        }
-        
-        if (resetOptions.materials) {
-            newData.packing_raw_materials = newData.packing_raw_materials.map(i => ({...i, quantity: 0}));
-        }
-
-        if (resetOptions.qc) {
-            newData.packing_qc_entries = [];
-        }
-
-        if (resetOptions.machines) {
-            newData.factory_machines = newData.factory_machines.map(m => ({...m, status: 'ว่าง'}));
-        }
+        if (resetOptions.logs) newData.molding_logs = [];
+        if (resetOptions.inventory) newData.packing_inventory = newData.packing_inventory.map(i => ({...i, quantity: 0}));
+        if (resetOptions.materials) newData.packing_raw_materials = newData.packing_raw_materials.map(i => ({...i, quantity: 0}));
+        if (resetOptions.qc) newData.packing_qc_entries = [];
+        if (resetOptions.machines) newData.factory_machines = newData.factory_machines.map(m => ({...m, status: 'ว่าง'}));
 
         await updateData(newData);
         setMsg(`ล้างข้อมูล ${selectedCount} รายการเรียบร้อยแล้ว`);
-        // Reset checkboxes if needed, or leave them
     };
 
     const resetItems = [
-        { key: 'orders', label: 'ใบสั่งผลิตและเอกสาร PO (Orders)', icon: FileText, desc: 'ลบรายการสั่งผลิต, เอกสาร PO และประวัติการจัดส่ง' },
-        { key: 'logs', label: 'ประวัติการผลิต (Production Logs)', icon: Activity, desc: 'ลบบันทึกยอดผลิตรายวันของทุกเครื่องจักร' },
-        { key: 'machines', label: 'สถานะเครื่องจักร (Machine Status)', icon: Cpu, desc: 'รีเซ็ตสถานะทุกเครื่องให้เป็น "ว่าง" (Idle)' },
-        { key: 'inventory', label: 'สต็อกสินค้าสำเร็จรูป (Finished Goods)', icon: Box, desc: 'ปรับยอดคงเหลือสินค้าสำเร็จรูปทุกรายการเป็น 0' },
-        { key: 'materials', label: 'สต็อกวัตถุดิบ (Raw Materials)', icon: Layers, desc: 'ปรับยอดคงเหลือวัตถุดิบทุกรายการเป็น 0' },
-        { key: 'qc', label: 'ประวัติ QC (Quality Control)', icon: ClipboardCheck, desc: 'ลบประวัติการตรวจสอบคุณภาพและรายการรอตรวจสอบ' },
+        { key: 'orders', label: 'ใบสั่งผลิตและออเดอร์ (Orders)', icon: FileText, desc: 'ลบรายการสั่งผลิตและออเดอร์ทั้งหมด' },
+        { key: 'logs', label: 'บันทึกการผลิต (Production Logs)', icon: Activity, desc: 'ลบประวัติการฉีดงานรายวัน' },
+        { key: 'machines', label: 'สถานะเครื่องจักร (Machine Status)', icon: Cpu, desc: 'รีเซ็ตเครื่องจักรทั้งหมดเป็น "ว่าง"' },
+        { key: 'inventory', label: 'สต็อกสินค้าสำเร็จรูป', icon: Box, desc: 'ปรับยอดสินค้าสำเร็จรูปเป็น 0' },
+        { key: 'materials', label: 'สต็อกวัตถุดิบ', icon: Layers, desc: 'ปรับยอดวัตถุดิบเป็น 0' },
+        { key: 'qc', label: 'ประวัติ QC', icon: ClipboardCheck, desc: 'ลบรายการรอตรวจสอบและประวัติ QC' },
     ];
 
     return (
@@ -398,7 +385,7 @@ const Settings: React.FC = () => {
                              </div>
                         </div>
 
-                         {/* AI Key Section */}
+                        {/* AI Key Section */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
                              <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
                                 <Sparkles size={100} />
@@ -408,7 +395,7 @@ const Settings: React.FC = () => {
                              </h3>
                              <div className="space-y-4 relative z-10">
                                 <p className="text-xs text-slate-500">
-                                    ตั้งค่า Google Gemini API Key เพื่อเปิดใช้งานฟีเจอร์อัจฉริยะ (AI) ภายในระบบ เช่น การวิเคราะห์ BOM หรือการแนะนำราคา
+                                    ตั้งค่า Google Gemini API Key เพื่อเปิดใช้งานฟีเจอร์อัจฉริยะ (AI)
                                 </p>
                                 <div className="flex gap-2">
                                     <input 
@@ -425,27 +412,22 @@ const Settings: React.FC = () => {
                                         Save Key
                                     </button>
                                 </div>
-                                <div className="text-[10px] text-slate-400">
-                                    * Key จะถูกบันทึกใน Browser ของคุณเท่านั้น (LocalStorage)
-                                </div>
                              </div>
                         </div>
 
-                        {/* Overhead & Depreciation */}
                         <CostListEditor title={t('set.overhead')} subtext="ค่าใช้จ่ายแฝง (Indirect Costs)" items={settings.overheadCosts} onUpdate={(items) => setSettings(prev => ({...prev, overheadCosts: items}))} t={t} />
-                        <CostListEditor title={t('set.depreciation')} subtext="ค่าเสื่อมราคาเครื่องจักร (Machine Depreciation)" items={settings.machineDepreciation} onUpdate={(items) => setSettings(prev => ({...prev, machineDepreciation: items}))} t={t} />
+                        <CostListEditor title={t('set.depreciation')} subtext="ค่าเสื่อมราคาเครื่องจักร" items={settings.machineDepreciation} onUpdate={(items) => setSettings(prev => ({...prev, machineDepreciation: items}))} t={t} />
                         
-                        {/* General Config */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                              <h3 className="font-bold text-slate-800 mb-4">{t('set.general')}</h3>
                              <div className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.regrind')}</label>
-                                    <input type="number" value={settings.productionConfig.regrindPercentage} onChange={(e) => updateProdConfig('regrindPercentage', parseFloat(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
+                                    <input type="number" value={settings.productionConfig?.regrindPercentage} onChange={(e) => updateProdConfig('regrindPercentage', parseFloat(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('set.oeeHours')}</label>
-                                    <input type="number" value={settings.productionConfig.workingHoursPerDay} onChange={(e) => updateProdConfig('workingHoursPerDay', parseFloat(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
+                                    <input type="number" value={settings.productionConfig?.workingHoursPerDay} onChange={(e) => updateProdConfig('workingHoursPerDay', parseFloat(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white text-slate-900" />
                                 </div>
                             </div>
                         </div>
@@ -470,7 +452,7 @@ const Settings: React.FC = () => {
                     {/* Backup & Restore */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                         <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                             <Database className="text-blue-500" size={20}/> สำรองและกู้คืนข้อมูล (Backup & Restore)
+                             <Database className="text-blue-500" size={20}/> สำรองและกู้คืนข้อมูล
                         </h3>
                         <p className="text-sm text-slate-500 mb-6">ดาวน์โหลดไฟล์ JSON เก็บไว้ หรือนำเข้าไฟล์เพื่อกู้คืนข้อมูล</p>
                         
@@ -491,36 +473,31 @@ const Settings: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Reset Controls - CHECKLIST STYLE */}
+                    {/* Reset Controls */}
                     <div className="bg-white rounded-xl border border-red-100 shadow-sm overflow-hidden relative">
                          <div className="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
                          <div className="p-6">
                             <div className="flex items-center justify-between mb-2">
                                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <AlertOctagon className="text-red-500" size={20}/> โซนอันตราย (Danger Zone)
+                                    <AlertOctagon className="text-red-500" size={20}/> Danger Zone
                                 </h3>
-                                <button 
-                                    onClick={() => toggleAll()} 
-                                    className="text-xs font-bold text-primary-600 hover:text-primary-800 flex items-center gap-1"
-                                >
-                                    {Object.values(resetOptions).every(v=>v) ? 'Deselect All' : 'Select All (Start Fresh)'}
-                                </button>
+                                <button onClick={() => toggleAll()} className="text-xs font-bold text-primary-600 hover:text-primary-800">Select All</button>
                             </div>
-                            <p className="text-sm text-slate-500 mb-6">เลือกรายการที่ต้องการล้างข้อมูลเพื่อเริ่มต้นใหม่ (รายชื่อสินค้าและพนักงานจะไม่ถูกลบ)</p>
+                            <p className="text-sm text-slate-500 mb-6">เลือกรายการที่ต้องการล้างข้อมูลเพื่อเริ่มต้นใหม่</p>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {resetItems.map(item => (
                                     <div 
                                         key={item.key}
                                         onClick={() => toggleOption(item.key as keyof typeof resetOptions)}
-                                        className={`cursor-pointer border rounded-xl p-4 flex items-start gap-3 transition-all ${resetOptions[item.key as keyof typeof resetOptions] ? 'border-red-500 bg-red-50/50 ring-1 ring-red-200' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
+                                        className={`cursor-pointer border rounded-xl p-4 flex items-start gap-3 transition-all ${resetOptions[item.key as keyof typeof resetOptions] ? 'border-red-500 bg-red-50/50' : 'border-slate-200 hover:bg-slate-50'}`}
                                     >
-                                        <div className={`mt-0.5 transition-colors ${resetOptions[item.key as keyof typeof resetOptions] ? 'text-red-500' : 'text-slate-300'}`}>
+                                        <div className={`mt-0.5 ${resetOptions[item.key as keyof typeof resetOptions] ? 'text-red-500' : 'text-slate-300'}`}>
                                             {resetOptions[item.key as keyof typeof resetOptions] ? <CheckSquare size={20} /> : <Square size={20} />}
                                         </div>
                                         <div>
-                                            <h4 className={`font-bold text-sm mb-1 ${resetOptions[item.key as keyof typeof resetOptions] ? 'text-red-700' : 'text-slate-700'}`}>{item.label}</h4>
-                                            <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
+                                            <h4 className="font-bold text-sm text-slate-700">{item.label}</h4>
+                                            <p className="text-xs text-slate-400">{item.desc}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -529,14 +506,10 @@ const Settings: React.FC = () => {
                             <div className="mt-8 pt-6 border-t border-slate-100">
                                 <button 
                                     onClick={executeReset}
-                                    className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white py-4 rounded-xl font-black shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-3"
+                                    className="w-full bg-red-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-red-700 transition-all flex items-center justify-center gap-3"
                                 >
-                                    <RefreshCcw size={24} className="animate-in spin-in-180 duration-500" />
-                                    ยืนยันการล้างข้อมูลที่เลือก (Execute Reset)
+                                    <RefreshCcw size={24} /> ยืนยันการล้างข้อมูล
                                 </button>
-                                <p className="text-center text-xs text-slate-400 mt-3">
-                                    * ระบบจะทำการล้างข้อมูลเฉพาะรายการที่ถูกติ๊กถูกเท่านั้น
-                                </p>
                             </div>
                          </div>
                     </div>

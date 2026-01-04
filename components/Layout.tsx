@@ -15,7 +15,9 @@ import {
   Bell,
   Plus,
   Moon,
-  Languages
+  Languages,
+  ShoppingCart,
+  Map
 } from 'lucide-react';
 import { useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
@@ -67,6 +69,7 @@ const Layout: React.FC = () => {
       key: 'warehouse', 
       icon: Box,
       children: [
+        { path: '/warehouse-map', label: 'nav.warehouseMap' },
         { path: '/qc', label: 'nav.qc' },
         { path: '/inventory', label: 'nav.finishedGoods' },
         { path: '/raw-materials', label: 'nav.rawMaterials' },
@@ -80,7 +83,8 @@ const Layout: React.FC = () => {
       children: [
         { path: '/employees', label: 'nav.employees' },
         { path: '/maintenance', label: 'nav.maintenance' },
-        { path: '/analytics-material', label: 'nav.analysisMat' },
+        { path: '/purchasing', label: 'nav.purchasing' },
+        { path: '/analytics-profit', label: 'nav.analysisProfit' },
         { path: '/oee', label: 'nav.oee' },
         { path: '/settings', label: 'nav.settings' }
       ]
@@ -198,7 +202,8 @@ const Layout: React.FC = () => {
                 <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl">
                    <NavLink to="/dashboard" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><LayoutDashboard size={20}/></NavLink>
                    <NavLink to="/production" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><Factory size={20}/></NavLink>
-                   <NavLink to="/inventory" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><Box size={20}/></NavLink>
+                   <NavLink to="/warehouse-map" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><Map size={20}/></NavLink>
+                   <NavLink to="/purchasing" className={({isActive}) => `p-2 rounded-xl transition-all ${isActive ? 'bg-white shadow-sm text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}><ShoppingCart size={20}/></NavLink>
                 </div>
            </div>
 

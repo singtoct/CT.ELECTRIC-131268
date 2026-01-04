@@ -1,11 +1,19 @@
 
-import firebase from "firebase/compat/app";
-import "firebase/compat/firestore";
-import "firebase/compat/analytics";
+import { initializeApp, getApp, getApps } from "firebase/app";
+import { 
+  getFirestore,
+  doc, 
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  getDocFromCache,
+  getDocFromServer,
+  setDoc,
+  Firestore
+} from "firebase/firestore";
 import { FactoryData } from "../types";
 import { getFactoryData as getDefaultData } from "./database";
 
-// --- 1. Firebase Configuration ---
 const firebaseConfig = {
   apiKey: "AIzaSyBSnnhiHdlsb1ZxgwG_hxAMNrTGYi4ge4Y",
   authDomain: "ct-plastic.firebaseapp.com",
@@ -16,138 +24,167 @@ const firebaseConfig = {
   measurementId: "G-4PDR78NMBC"
 };
 
-// --- 2. Initialize Firebase ---
-const app = !firebase.apps.length 
-  ? firebase.initializeApp(firebaseConfig) 
-  : firebase.app();
+// Singleton App Instance
+// We wrap this in a try-catch to prevent immediate crash if Firebase SDK fails to load entirely
+let app: any;
+try {
+    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+} catch (e) {
+    console.error("Critical: Firebase App Initialization Failed", e);
+}
 
-const db = firebase.firestore(app);
+/**
+ * Robustly initialize Firestore with Graceful Degradation.
+ * If initialization fails (e.g., service not available, offline, version mismatch),
+ * we catch the error and leave db as null. The app will then run in Offline Mode.
+ */
+let db: Firestore | null = null;
 
-// Enable Offline Persistence (Best effort)
-// Note: synchronizeTabs: true can cause "Write stream exhausted" errors if tabs fight for the lock. 
-// We disable it to be safe and prevent overloading the client-side queue.
-db.enablePersistence({ synchronizeTabs: false }).catch((err) => {
-    if (err.code === 'failed-precondition') {
-        console.warn('Persistence failed: Multiple tabs open.');
-    } else if (err.code === 'unimplemented') {
-        console.warn('Persistence not supported by browser.');
+if (app) {
+    try {
+        try {
+            // Attempt 1: Initialize with persistence (preferred)
+            db = initializeFirestore(app, {
+              localCache: persistentLocalCache({
+                tabManager: persistentMultipleTabManager()
+              })
+            });
+        } catch (e: any) {
+            // Attempt 2: Fallback to default instance if persistence fails or already initialized
+            console.warn("Firestore: Persistence init warning (falling back to default):", e.message);
+            db = getFirestore(app);
+        }
+    } catch (criticalError: any) {
+        // Critical Failure: Service unavailable or module error.
+        console.error("Critical: Firestore service unavailable. App starting in OFFLINE mode.", criticalError);
+        db = null;
     }
-});
+}
 
-// Collection 'factory' -> Document 'main_data'
-const DATA_DOC_REF = db.collection("factory").doc("main_data");
+const DATA_DOC_PATH = "factory/main_data";
 
-// --- Helper: Deep Sanitize Data ---
+/**
+ * Robustly sanitizes data to be JSON-safe.
+ */
 export const sanitizeData = (data: any): any => {
     const seen = new WeakSet();
-    const visit = (obj: any): any => {
-        if (!obj || typeof obj !== 'object') return obj;
-        if (obj instanceof Date) return obj.toISOString();
-        if (seen.has(obj)) return null;
-        if (obj.nodeType || obj instanceof Element) return null;
 
-        const constr = obj.constructor;
-        const isArray = Array.isArray(obj);
-        const isPlain = !constr || constr.name === 'Object';
+    const isPlainObject = (obj: any): boolean => {
+        if (typeof obj !== 'object' || obj === null) return false;
+        const proto = Object.getPrototypeOf(obj);
+        return proto === Object.prototype || proto === null;
+    };
+
+    const visit = (obj: any): any => {
+        if (obj === null || obj === undefined) return obj;
+        if (typeof obj !== 'object') return obj;
+        if (seen.has(obj)) return null;
         
-        if (!isArray && !isPlain) return null;
+        if (obj instanceof Date) return obj.toISOString();
+        if (typeof obj.toDate === 'function') {
+            try { return obj.toDate().toISOString(); } catch(e) { return null; }
+        }
+
+        if (Array.isArray(obj)) {
+            seen.add(obj);
+            return obj.map(visit);
+        }
+        
+        if (!isPlainObject(obj)) {
+            if (typeof obj.toJSON === 'function') {
+                try { 
+                    const json = obj.toJSON();
+                    if (json === obj || typeof json !== 'object') return json;
+                    return visit(json); 
+                } catch (e) { return null; }
+            }
+            return null;
+        }
 
         seen.add(obj);
-
-        if (isArray) {
-            const copy = [];
-            for (let i = 0; i < obj.length; i++) {
-                const val = visit(obj[i]);
-                if (val !== undefined) copy.push(val);
-            }
-            seen.delete(obj); 
-            return copy;
-        } else {
-            const copy: any = {};
-            for (const key in obj) {
-                if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                    if (key.startsWith('_') || key.startsWith('$')) continue;
-                    const val = visit(obj[key]);
-                    if (val !== undefined) copy[key] = val;
+        const copy: any = {};
+        for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                if (key.startsWith('_') || key.startsWith('$')) continue;
+                const val = visit(obj[key]);
+                if (val !== undefined) {
+                    copy[key] = val;
                 }
             }
-            seen.delete(obj);
-            return copy;
         }
+        return copy;
     };
+
     return visit(data);
 };
 
-// --- 3. Service Functions ---
-
-// Fetch Data with Timeout for Offline Support
+/**
+ * Fetches factory data from Firestore with an aggressive fast-fail strategy.
+ * Returns default data immediately if Firestore is not initialized.
+ */
 export const fetchFactoryData = async (): Promise<FactoryData> => {
-  // Create a timeout promise (2 seconds)
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error("Connection timeout")), 2000)
-  );
-
-  try {
-    // Race Firestore against timeout
-    const docSnap: any = await Promise.race([DATA_DOC_REF.get(), timeout]);
-    
-    if (docSnap.exists) {
-      console.log("✅ Document data loaded from Firebase!");
-      const rawData = docSnap.data();
-      return sanitizeData(rawData) as FactoryData;
-    } else {
-      console.log("⚠️ No cloud data found! Initializing with default data...");
-      const defaultData = getDefaultData();
-      return defaultData;
-    }
-  } catch (error) {
-    // If we time out or fail to connect, explicitly throw so App.tsx can handle it
-    console.warn("⚠️ Firebase offline or unreachable. Switching to local mode.");
-    throw new Error("Offline");
+  // Graceful fallback if DB failed to init
+  if (!db) {
+      console.warn("Firestore: DB not initialized. Returning default data (Offline Mode).");
+      return getDefaultData();
   }
+
+  const docRef = doc(db, DATA_DOC_PATH);
+  const isOnline = navigator.onLine;
+
+  if (isOnline) {
+    try {
+      // 3s timeout for server fetch
+      const serverPromise = getDocFromServer(docRef);
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Timeout")), 3000)
+      );
+
+      const docSnap = await Promise.race([serverPromise, timeoutPromise]);
+      if (docSnap.exists()) {
+        return sanitizeData(docSnap.data()) as FactoryData;
+      }
+    } catch (error: any) {
+      console.warn(`Firestore: Server fetch bypassed: ${error.message}`);
+    }
+  }
+
+  // Fallback to cache
+  try {
+    const cachedSnap = await getDocFromCache(docRef);
+    if (cachedSnap.exists()) {
+      return sanitizeData(cachedSnap.data()) as FactoryData;
+    }
+  } catch (cacheErr: any) {
+    console.warn("Firestore: Cache empty.");
+  }
+
+  return getDefaultData();
 };
 
-// --- Debounced Save Logic ---
-// Prevents "Write stream exhausted" errors by coalescing rapid updates into a single write.
-
-let pendingSave: { data: any, resolve: () => void, reject: (e: any) => void } | null = null;
 let saveTimer: any = null;
-
-const executeSave = async () => {
-  if (!pendingSave) return;
-  
-  const { data, resolve } = pendingSave;
-  pendingSave = null; // Clear pending so new ones can queue
-  
-  try {
-    await DATA_DOC_REF.set(data);
-    console.log("✅ Cloud Sync Complete");
-    resolve();
-  } catch (error) {
-    console.warn("❌ Cloud Sync Failed (likely offline/throttled):", error);
-    // Resolve anyway to prevent blocking the UI; the data is safely in local state
-    resolve(); 
-  }
-};
-
-// Save Data (Debounced)
+/**
+ * Saves factory data with final sanitization before write.
+ */
 export const saveFactoryData = async (data: FactoryData): Promise<void> => {
+  if (!db) {
+      console.warn("Firestore: DB not initialized. Save skipped (Simulated success).");
+      return;
+  }
+
   const cleanData = sanitizeData(data);
-  const finalData = JSON.parse(JSON.stringify(cleanData));
+  const docRef = doc(db, DATA_DOC_PATH);
 
-  return new Promise((resolve, reject) => {
-    // If there is a pending save waiting to fire, resolve it immediately (skip it)
-    // effectively replacing it with this newer data.
-    if (pendingSave) {
-        pendingSave.resolve();
-    }
-
-    pendingSave = { data: finalData, resolve, reject };
-
-    // Reset timer
+  return new Promise((resolve) => {
     if (saveTimer) clearTimeout(saveTimer);
-    
-    // Wait 3 seconds (increased from 2s) to be safer against write exhaustion
-    saveTimer = setTimeout(executeSave, 3000);
+    saveTimer = setTimeout(async () => {
+        try {
+            await setDoc(docRef, cleanData);
+            console.log("Firestore: Saved locally (Sync in background)");
+        } catch (e: any) {
+            console.error("Firestore Error: Write failed", e.message);
+        }
+        resolve();
+    }, 2000);
   });
 };

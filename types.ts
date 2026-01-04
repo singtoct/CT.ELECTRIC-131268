@@ -37,6 +37,8 @@ export interface MoldingLog {
   startTime?: string;
 }
 
+export type ISOStatus = 'Quarantine' | 'Released' | 'Hold' | 'Rejected';
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -47,6 +49,24 @@ export interface InventoryItem {
   source?: 'Purchased' | 'Produced';
   category?: string;
   defaultSupplierId?: string;
+  
+  // WMS & ISO Fields
+  locationId?: string; // ID of the rack/bin
+  lotNumber?: string;
+  receivedDate?: string;
+  expiryDate?: string;
+  isoStatus?: ISOStatus; // QC Status per ISO
+}
+
+export interface WarehouseLocation {
+  id: string;
+  name: string; // e.g., "A-01-01" (Zone-Rack-Level)
+  zone: string; // "Raw Material", "Finished Goods", "Quarantine"
+  type: 'Rack' | 'Floor' | 'Bin';
+  capacity: number; // Max capacity in kg or pallets
+  description?: string;
+  tags?: string[]; // e.g., ["Plastic", "Fast Moving"]
+  priority?: 'High' | 'Medium' | 'Low'; // For ABC Analysis visualization
 }
 
 export interface Machine {
@@ -205,6 +225,21 @@ export interface FactorySupplier {
   contactPerson: string;
 }
 
+export interface FactoryQuotation {
+  id: string;
+  rawMaterialId: string;
+  supplierId: string;
+  pricePerUnit: number;
+  moq: number; // Minimum Order Quantity
+  unit: string;
+  leadTimeDays: number; // Delivery time in days
+  paymentTerm: string; // e.g., "Credit 30 Days", "Cash"
+  quotationDate: string;
+  validUntil: string;
+  note?: string;
+  isPreferred?: boolean; // Mark as selected supplier
+}
+
 export interface PurchaseOrderItem {
   quantity: number;
   rawMaterialId: string;
@@ -316,12 +351,16 @@ export interface FactoryData {
   factory_products: Product[];
   factory_settings: FactorySettings;
   
+  // WMS
+  warehouse_locations: WarehouseLocation[];
+
   // JSON Specific
   packing_boms: PackingBOM[]; 
   packing_logs: PackingLog[];
   maintenance_logs: MaintenanceLog[];
   factory_suppliers: FactorySupplier[];
   factory_purchase_orders: FactoryPurchaseOrder[];
+  factory_quotations?: FactoryQuotation[]; // New: RFQ
   read_notifications: { ids: string[] };
   factory_customers: FactoryCustomer[];
   factory_complaints: any[];

@@ -1,262 +1,240 @@
-import { FactoryData, Product, BOMItem, PackingBOM, InventoryItem, FactorySettings } from '../types';
 
-const defaultSettings: FactorySettings = {
-  id: 'main',
-  name: 'CT Electric',
-  companyInfo: {
-    name: 'CT Electric Factory',
-    address: '123 Factory Road',
-    taxId: '1234567890123',
-    phone: '02-123-4567',
-    email: 'admin@ctelectric.com',
-    logoUrl: ''
-  },
-  productionConfig: {
-    shifts: ['เช้า', 'ดึก'],
-    lowStockThreshold: 100,
-    vatRate: 7,
-    regrindPercentage: 0,
-    workingHoursPerDay: 8
-  },
-  productionStatuses: ['รอฉีด', 'รอประกบ', 'รอแพค', 'รอนับ', 'เสร็จสิ้น'],
-  machineStatuses: ['ว่าง', 'ทำงาน', 'เสีย', 'ซ่อมบำรุง'],
-  overheadCosts: [],
-  machineDepreciation: [],
-  roles: [],
-  overheadRatePerHour: 0,
-  depreciationCostPerHour: 0,
-  productionSteps: ['รอฉีด', 'รอประกบ', 'รอแพค', 'รอนับ', 'เสร็จสิ้น'],
-  departments: ['ฝ่ายผลิต', 'ฝ่ายแพค', 'คลังสินค้า', 'จัดส่ง']
+import { FactoryData } from '../types';
+
+// Generate many sample items for testing pagination
+const generateSampleOrders = (count: number) => {
+    return Array.from({ length: count }).map((_, i) => ({
+        id: `order-${i}`,
+        name: i % 2 === 0 ? "ฝาหน้ากาก CT A-101" : "ฝาหน้ากาก CT A-102",
+        customerId: `cust-${(i % 5) + 1}`,
+        color: "สีขาว",
+        quantity: 1000 + (i * 100),
+        dueDate: `2025-07-${String((i % 28) + 1).padStart(2, '0')}`,
+        stock: 0,
+        salePrice: 3.77,
+        status: i < 5 ? 'Completed' : 'Open',
+        lotNumber: `LOT-${2025000 + i}`
+    }));
 };
 
-// Full Dataset with Fixed IDs matching JSON Source
+const generateSamplePOs = (count: number) => {
+    return Array.from({ length: count }).map((_, i) => ({
+        id: `po-idx-${i}`,
+        poNumber: `PUR-2025${String(i + 1).padStart(3, '0')}`,
+        orderDate: `2025-06-${String((i % 28) + 1).padStart(2, '0')}`,
+        expectedDate: `2025-07-${String((i % 28) + 1).padStart(2, '0')}`,
+        supplierId: i % 2 === 0 ? "s1" : "s2",
+        status: i < 8 ? 'Received' : 'Pending',
+        items: [
+            { rawMaterialId: "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", quantity: 500, unitPrice: 52 }
+        ]
+    }));
+};
+
+// Generate Warehouse Locations (Zone A: Raw, Zone B: Finished, Zone Q: Quarantine)
+const generateLocations = () => {
+    const locs = [];
+    
+    // Zone A: Raw Materials (Racks A-01 to A-06)
+    for(let i=1; i<=6; i++) {
+        locs.push({
+            id: `loc-a-${i}`,
+            name: `A-0${i}`,
+            zone: 'Raw Material',
+            type: 'Rack',
+            capacity: 2000,
+            description: 'โซนวัตถุดิบหลัก (PC/ABS)'
+        });
+    }
+
+    // Zone B: Finished Goods (Racks B-01 to B-10)
+    for(let i=1; i<=10; i++) {
+        locs.push({
+            id: `loc-b-${i}`,
+            name: `B-${String(i).padStart(2, '0')}`,
+            zone: 'Finished Goods',
+            type: 'Rack',
+            capacity: 5000,
+            description: 'โซนสินค้าสำเร็จรูป พร้อมส่ง'
+        });
+    }
+
+    // Zone Q: Quarantine (QC Area)
+    locs.push({
+        id: `loc-q-01`,
+        name: `Q-01`,
+        zone: 'Quarantine',
+        type: 'Floor',
+        capacity: 1000,
+        description: 'พื้นที่พักสินค้า QC'
+    });
+
+    return locs;
+};
+
 const rawJsonData: any = {
-  "packing_orders": [
-    {
-      "id": "0ca4f17c-eced-4217-abd7-2db801f0d908",
-      "quantity": 21120,
-      "color": "สีขาว",
-      "dueDate": "2025-07-21",
-      "salePrice": 3.77,
-      "customerId": "4c9db0db-1cf2-40f7-9dc9-f445a87e6891", // Links to factory_customers below
-      "stock": 0,
-      "name": "ฝาหน้ากาก CT A-101"
+  "packing_orders": generateSampleOrders(25),
+  "packing_raw_materials": [
+    { 
+        "id": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", "name": "เม็ด PC ใส BP15", "quantity": 574, "unit": "kg", "costPerUnit": 52,
+        "locationId": "loc-a-1", "isoStatus": "Released", "receivedDate": "2024-01-15", "lotNumber": "RM-240115"
     },
-    {
-      "id": "3166d972-599d-470c-b4e5-0796a9825715",
-      "name": "ฝาหน้ากาก CT A-102",
-      "stock": 0,
-      "color": "สีขาว",
-      "customerId": "4c9db0db-1cf2-40f7-9dc9-f445a87e6891",
-      "salePrice": 3.7,
-      "dueDate": "2025-07-21",
-      "quantity": 4800
+    { 
+        "id": "8daabcc1-3ee7-4be0-868c-b41c3922f26b", "name": "สีผงขาว PC ", "unit": "kg", "quantity": 36.56, "costPerUnit": 180,
+        "locationId": "loc-a-2", "isoStatus": "Released", "receivedDate": "2024-02-01", "lotNumber": "RM-240201"
     },
-    {
-      "id": "334ae6a2-4657-4726-b812-50606dcfd533",
-      "color": "สีขาว",
-      "salePrice": 0,
-      "dueDate": "2025-07-21",
-      "quantity": 4800,
-      "name": "ฝาตะแกรง 1022"
-    },
-    {
-      "id": "4f74dd86-0df1-4077-aada-fe9529d046c6",
-      "salePrice": 0.48,
-      "name": "CPS-113 ชุดขาล็อคฝาครอบ",
-      "color": "สีขาว",
-      "quantity": 87500,
-      "dueDate": "2025-07-21"
+    { 
+        "id": "u5w0v2x6-x6u5-4vq-s-781u-1x0v3927x3v9", "name": "เม็ด POM", "quantity": 100, "unit": "kg", "costPerUnit": 41,
+        "locationId": "loc-a-3", "isoStatus": "Quarantine", "receivedDate": "2024-03-10", "lotNumber": "RM-240310"
     }
   ],
-  // Explicit Customer Data to match IDs in Orders
-  "factory_customers": [
-      {
-          "id": "4c9db0db-1cf2-40f7-9dc9-f445a87e6891",
-          "name": "ร้านอุปกรณ์ไฟฟ้า (ทั่วไป)",
-          "contactPerson": "คุณสมชาย",
-          "phone": "081-234-5678",
-          "address": "กรุงเทพมหานคร"
-      }
-  ],
-  // Explicit Raw Materials with JSON IDs
-  "raw_materials": [
-      { 
-          "id": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", // ID from your JSON
-          "name": "เม็ดพลาสติก PP (ตัวอย่าง)", 
-          "quantity": 5000, 
-          "unit": "kg", 
-          "costPerUnit": 45 
-      },
-      { 
-          "id": "rm-poly-black-001", 
-          "name": "เม็ดพลาสติก PP (ดำ)", 
-          "quantity": 2000, 
-          "unit": "kg", 
-          "costPerUnit": 42 
-      },
-      { 
-          "id": "rm-screw-001", 
-          "name": "สกรูกล่อง", 
-          "quantity": 10000, 
-          "unit": "ตัว", 
-          "costPerUnit": 0.5 
-      }
-  ],
-  // Explicit Products so IDs are stable
   "factory_products": [
+    { "id": "prod-a101", "name": "ฝาหน้ากาก CT A-101", "color": "สีขาว", "salePrice": 3.77, "cycleTimeSeconds": 15, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย" },
+    { "id": "prod-a102", "name": "ฝาหน้ากาก CT A-102", "color": "สีขาว", "salePrice": 3.7, "cycleTimeSeconds": 15, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย" }
+  ],
+  "packing_boms": [
+    {
+      "id": "ฝาหน้ากาก CT A-101 (สีขาว)",
+      "productName": "ฝาหน้ากาก CT A-101 (สีขาว)",
+      "components": [
+        { "rawMaterialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", "quantity": 0.023 },
+        { "rawMaterialId": "8daabcc1-3ee7-4be0-868c-b41c3922f26b", "quantity": 0.00046 }
+      ]
+    }
+  ],
+  "factory_machines": [
+    { "id": "m1", "name": "เครื่องฉีด 1", "status": "ทำงาน", "location": "โซน A", "workingHoursPerDay": 18 },
+    { "id": "m2", "name": "เครื่องฉีด 2", "status": "ว่าง", "location": "โซน A", "workingHoursPerDay": 18 }
+  ],
+  "packing_employees": [
+    { "id": "e1", "name": "กะปิ", "department": "ฝ่ายผลิต", "status": "Active", "dailyWage": 372, "hireDate": "2024-11-23", "roleId": "role_production" }
+  ],
+  "molding_logs": [],
+  "factory_suppliers": [
+    { "id": "s1", "name": "บริษัท เคมีภัณฑ์ จำกัด", "contactPerson": "คุณสมชาย", "phone": "02-123-4567" },
+    { "id": "s2", "name": "Polymer Tech Co.", "contactPerson": "คุณวิชัย", "phone": "081-444-5566" },
+    { "id": "s3", "name": "Global Plastic Supply", "contactPerson": "Alice", "phone": "099-888-7777" }
+  ],
+  "factory_purchase_orders": generateSamplePOs(22),
+  "factory_quotations": [
       {
-          "id": "prod-a101-fixed-id",
-          "name": "ฝาหน้ากาก CT A-101",
-          "color": "สีขาว",
-          "salePrice": 3.77,
-          "category": "สินค้าเพื่อขาย",
-          "productType": "Finished Good",
-          "standardColor": "สีขาว",
-          "cycleTimeSeconds": 15,
-          "laborAllocation": 100,
-          "profitMargin": 30,
-          "totalCost": 0,
-          "overheadCost": 0,
-          "laborCost": 0,
-          "materialCost": 0,
-          "profit": 0,
-          "bom": [] // Will be hydrated below
+          "id": "q1",
+          "rawMaterialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0",
+          "supplierId": "s1",
+          "pricePerUnit": 52,
+          "moq": 500,
+          "unit": "kg",
+          "leadTimeDays": 7,
+          "paymentTerm": "Credit 30 Days",
+          "quotationDate": "2025-01-01",
+          "validUntil": "2025-12-31",
+          "note": "ส่งฟรีเมื่อสั่งครบ 10,000 บาท",
+          "isPreferred": true
       },
       {
-          "id": "prod-a102-fixed-id",
-          "name": "ฝาหน้ากาก CT A-102",
-          "color": "สีขาว",
-          "salePrice": 3.70,
-          "category": "สินค้าเพื่อขาย",
-          "productType": "Finished Good",
-          "standardColor": "สีขาว",
-          "cycleTimeSeconds": 18,
-          "laborAllocation": 100,
-          "profitMargin": 30,
-          "totalCost": 0,
-          "overheadCost": 0,
-          "laborCost": 0,
-          "materialCost": 0,
-          "profit": 0,
-          "bom": []
+          "id": "q2",
+          "rawMaterialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0",
+          "supplierId": "s2",
+          "pricePerUnit": 50,
+          "moq": 1000,
+          "unit": "kg",
+          "leadTimeDays": 14,
+          "paymentTerm": "Cash",
+          "quotationDate": "2025-01-10",
+          "validUntil": "2025-06-30",
+          "note": "ราคาถูกกว่าแต่ต้องจ่ายสด"
+      },
+      {
+          "id": "q3",
+          "rawMaterialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0",
+          "supplierId": "s3",
+          "pricePerUnit": 55,
+          "moq": 100,
+          "unit": "kg",
+          "leadTimeDays": 3,
+          "paymentTerm": "Credit 60 Days",
+          "quotationDate": "2025-02-01",
+          "validUntil": "2025-12-31",
+          "note": "ส่งไวมาก เครดิตยาว"
       }
   ],
-  // BOMs linking Product Names to Raw Material IDs
-  "packing_boms": [
+  "production_documents": [
+    {
+        "id": "doc-1",
+        "docNumber": "PO-2025001",
+        "date": "2025-07-01",
+        "customerName": "ลูกค้ารายใหญ่ A",
+        "status": "Approved",
+        "items": [
+            { "id": "i1", "productId": "prod-a101", "productName": "ฝาหน้ากาก CT A-101", "quantity": 5000, "unit": "pcs", "dueDate": "2025-07-20" }
+        ],
+        "createdBy": "Admin"
+    }
+  ],
+  "warehouse_locations": generateLocations(),
+  "factory_settings": {
+    "id": "main",
+    "companyInfo": {
+        "name": "CT Electric Co., Ltd.",
+        "address": "15/16 หมู่ 9 ต.นาดี อ.เมืองสมุทรสาคร จ.สมุทรสาคร 74000",
+        "taxId": "0745560001698"
+    },
+    "productionStatuses": ["รอแปะกันรอย", "รอประกบ", "รอแพค", "รอนับ"],
+    "machineStatuses": ["ทำงาน", "ว่าง", "เสีย", "กำลังซ่อม", "รอเปลี่ยนโมล"],
+    "overheadRatePerHour": 52.5,
+    "depreciationCostPerHour": 17.0,
+    "productionSteps": ["รอฉีด", "รอประกบ", "รอแพค", "รอนับ", "เสร็จสิ้น"]
+  },
+  "packing_inventory": [
       {
-          "id": "bom-001",
-          "productName": "ฝาหน้ากาก CT A-101",
-          "components": [
-              { "rawMaterialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", "quantity": 0.05 } // 50g per unit
-          ]
+        "id": "inv-fg-1", "name": "ฝาหน้ากาก CT A-101", "quantity": 1500, "unit": "pcs", "category": "Finished", "source": "Produced",
+        "locationId": "loc-b-1", "isoStatus": "Released", "lotNumber": "FG-2501001", "receivedDate": "2025-01-10"
+      },
+      {
+        "id": "inv-fg-2", "name": "ฝาหน้ากาก CT A-102", "quantity": 500, "unit": "pcs", "category": "Finished", "source": "Produced",
+        "locationId": "loc-q-01", "isoStatus": "Quarantine", "lotNumber": "FG-2501005", "receivedDate": "2025-01-12"
       }
   ],
   "packing_logs": [],
-  "molding_logs": [],
-  "packing_inventory": [],
-  "packing_raw_materials": [], // Will be filled from raw_materials
-  "factory_machines": [
-      { id: "m1", name: "เครื่องฉีด 1", status: "ว่าง", location: "Zone A", workingHoursPerDay: 24 },
-      { id: "m2", name: "เครื่องฉีด 2", status: "ว่าง", location: "Zone A", workingHoursPerDay: 24 },
-      { id: "m3", name: "เครื่องฉีด 3", status: "ว่าง", location: "Zone A", workingHoursPerDay: 24 },
-      { id: "m4", name: "เครื่องฉีด 4", status: "ว่าง", location: "Zone A", workingHoursPerDay: 24 },
-      { id: "m5", name: "เครื่องฉีด 5", status: "ว่าง", location: "Zone A", workingHoursPerDay: 24 },
-      { id: "m6", name: "เครื่องฉีด 6", status: "ว่าง", location: "Zone B", workingHoursPerDay: 24 },
-      { id: "m7", name: "เครื่องฉีด 7", status: "ว่าง", location: "Zone B", workingHoursPerDay: 24 },
-      { id: "m8", name: "เครื่องฉีด 8", status: "ว่าง", location: "Zone B", workingHoursPerDay: 24 },
-  ],
-  "packing_employees": [
-      { id: "e1", name: "อาโม", department: "ฝ่ายแพค", status: "Active", dailyWage: 350, hireDate: "2024-01-01", roleId: "packer", phone: "", address: "" },
-      { id: "e2", name: "อาต่อ", department: "ฝ่ายแพค", status: "Active", dailyWage: 350, hireDate: "2024-01-01", roleId: "packer", phone: "", address: "" },
-      { id: "e3", name: "อาฮิน", department: "ฝ่ายผลิต", status: "Active", dailyWage: 400, hireDate: "2024-01-01", roleId: "operator", phone: "", address: "" },
-      { id: "e4", name: "อามี", department: "ฝ่ายผลิต", status: "Active", dailyWage: 400, hireDate: "2024-01-01", roleId: "operator", phone: "", address: "" },
-      { id: "e5", name: "ตะเล็ก", department: "ฝ่ายผลิต", status: "Active", dailyWage: 400, hireDate: "2024-01-01", roleId: "operator", phone: "", address: "" },
-  ],
-  "packing_qc_entries": [],
-  "factory_settings": defaultSettings,
-  "production_documents": []
+  "maintenance_logs": [],
+  "read_notifications": { "ids": [] },
+  "factory_customers": [],
+  "factory_complaints": [],
+  "production_queue": [],
+  "machine_daily_logs": [],
+  "packing_stations": [],
+  "packing_queue": []
 };
 
+/**
+ * Provides the default factory data structure.
+ * Uses a safe cloning method to ensure no cross-contamination between state instances.
+ */
 export const getFactoryData = (): FactoryData => {
-    // Clone raw data
-    const data = JSON.parse(JSON.stringify(rawJsonData)) as FactoryData;
-    const rawAny = rawJsonData as any;
+    // 1. Safe clone using stringify/parse for deep immutability of raw data
+    let data: FactoryData;
+    try {
+        data = JSON.parse(JSON.stringify(rawJsonData)) as FactoryData;
+    } catch (e) {
+        console.error("Critical: Initial data stringify failed", e);
+        // Fallback to direct object if stringify fails (though it shouldn't for rawJsonData)
+        data = { ...rawJsonData } as FactoryData;
+    }
     
-    // --- 1. MIGRATION: Fix 'raw_materials' naming mismatch AND PRESERVE IDs ---
-    // If JSON has 'raw_materials' but 'packing_raw_materials' is empty, move the data over.
-    if (rawAny.raw_materials && Array.isArray(rawAny.raw_materials)) {
-        if (!data.packing_raw_materials || data.packing_raw_materials.length === 0) {
-            data.packing_raw_materials = rawAny.raw_materials.map((m: any) => ({
-                id: m.id, // KEEP THE ORIGINAL ID FROM JSON
-                name: m.name,
-                quantity: m.quantity || 0,
-                unit: m.unit || 'kg',
-                costPerUnit: m.costPerUnit || 0,
-                category: 'Material', 
-                source: 'Purchased'
-            }));
+    // 2. Perform derived data linking (BOMs to Products)
+    data.factory_products = data.factory_products.map(prod => {
+        const fullNameKey = `${prod.name} (${prod.color})`;
+        const matchingBom = data.packing_boms.find(b => b.productName === fullNameKey || b.id === fullNameKey || b.productName === prod.name);
+        if (matchingBom) {
+            return {
+                ...prod,
+                bom: matchingBom.components.map(c => {
+                    const mat = data.packing_raw_materials.find(m => m.id === c.rawMaterialId);
+                    return { materialId: c.rawMaterialId, materialName: mat?.name || 'Unknown Material', quantityPerUnit: c.quantity };
+                })
+            };
         }
-    }
-
-    // Ensure all critical arrays exist (Safety Check)
-    if(!data.packing_inventory) data.packing_inventory = [];
-    if(!data.packing_raw_materials) data.packing_raw_materials = [];
-    if(!data.factory_products) data.factory_products = [];
-    if(!data.packing_boms) data.packing_boms = [];
-    if(!data.factory_machines) data.factory_machines = [];
-    if(!data.factory_settings) data.factory_settings = defaultSettings;
-    if(!data.molding_logs) data.molding_logs = [];
-    if(!data.packing_orders) data.packing_orders = [];
-    if(!data.factory_customers) data.factory_customers = [];
-
-    // --- 2. HYDRATION: Link Products from Orders (Only if missing) ---
-    // This logic now runs ONLY for products NOT already defined in factory_products
-    if (data.packing_orders.length > 0) {
-        data.packing_orders.forEach(order => {
-            const existingProduct = data.factory_products.find(p => p.name === order.name);
-            if (!existingProduct) {
-                // Only generate if not found in JSON
-                data.factory_products.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    name: order.name,
-                    color: order.color || 'N/A',
-                    salePrice: order.salePrice || 0,
-                    category: 'สินค้าเพื่อขาย',
-                    standardColor: order.color || 'N/A',
-                    totalCost: 0,
-                    overheadCost: 0,
-                    laborCost: 0,
-                    materialCost: 0,
-                    profit: 0,
-                    cycleTimeSeconds: 15,
-                    laborAllocation: 100,
-                    productType: 'Finished Good',
-                    bom: []
-                });
-            }
-        });
-    }
-
-    // --- 3. HYDRATION: Link BOMs to Products ---
-    if (data.packing_boms && data.factory_products.length > 0) {
-        data.factory_products = data.factory_products.map(product => {
-            const relatedBom = data.packing_boms.find(b => b.productName === product.name);
-            if (relatedBom) {
-                const appBom: BOMItem[] = relatedBom.components.map(comp => {
-                    // Match using the Preserved ID
-                    const material = data.packing_raw_materials.find(m => m.id === comp.rawMaterialId);
-                    return {
-                        materialId: comp.rawMaterialId,
-                        materialName: material ? material.name : 'Unknown Material (' + comp.rawMaterialId + ')',
-                        quantityPerUnit: comp.quantity
-                    };
-                });
-                return { ...product, bom: appBom };
-            }
-            return product;
-        });
-    }
-
+        return prod;
+    });
     return data;
 };
