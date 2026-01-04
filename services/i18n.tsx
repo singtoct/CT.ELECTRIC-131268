@@ -49,7 +49,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.analysisCost': 'Cost Analysis',
     'nav.analysisProfit': 'Profit Analysis',
     'nav.oee': 'Machine Efficiency (OEE)',
-    'nav.reports': 'Annual Reports',
+    'nav.reports': 'Executive Reports',
     'nav.settings': 'System Settings',
 
     // Placeholder Page
@@ -91,15 +91,20 @@ const translations: Record<Language, Record<string, string>> = {
     'set.costValue': 'Cost',
 
     // Reports
-    'report.title': 'Annual Reports',
-    'report.subtitle': 'Comprehensive summary for management',
+    'report.title': 'Executive Intelligence',
+    'report.subtitle': 'Deep analytics and AI-powered insights for management.',
     'report.purchasing': 'Purchasing Report',
     'report.production': 'Production Report',
+    'report.sales': 'Sales Analysis',
     'report.selectYear': 'Fiscal Year',
     'report.totalSpend': 'Total Spend',
     'report.totalItems': 'Total Items',
     'report.totalProduced': 'Total Produced',
     'report.print': 'Print Report',
+    'report.aiAnalysis': 'AI Executive Summary',
+    'report.generateAI': 'Generate Insight',
+    'report.customerRisk': 'Customer Dependency Risk',
+    'report.laborEff': 'Labor Efficiency',
     
     // Purchasing
     'pur.rfq': 'Price Comparison (RFQ)',
@@ -223,7 +228,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.analysisCost': 'วิเคราะห์ต้นทุน',
     'nav.analysisProfit': 'วิเคราะห์กำไร',
     'nav.oee': 'ประสิทธิภาพเครื่องจักร',
-    'nav.reports': 'รายงานประจำปี',
+    'nav.reports': 'รายงานผู้บริหาร',
     'nav.settings': 'ตั้งค่าระบบ',
     'nav.warehouseMap': 'แผนผังคลังสินค้า (WMS)',
 
@@ -266,15 +271,20 @@ const translations: Record<Language, Record<string, string>> = {
     'set.costValue': 'จำนวน',
 
     // Reports
-    'report.title': 'รายงานประจำปี',
-    'report.subtitle': 'สรุปข้อมูลสำหรับผู้บริหาร (Management Report)',
-    'report.purchasing': 'รายงานการจัดซื้อ (Purchasing)',
-    'report.production': 'รายงานยอดผลิต (Production)',
+    'report.title': 'รายงานอัจฉริยะสำหรับผู้บริหาร',
+    'report.subtitle': 'วิเคราะห์ข้อมูลเชิงลึกและสรุปสถานการณ์ด้วย AI',
+    'report.purchasing': 'รายงานการจัดซื้อ',
+    'report.production': 'รายงานการผลิต',
+    'report.sales': 'วิเคราะห์ยอดขาย',
     'report.selectYear': 'เลือกปีงบประมาณ',
     'report.totalSpend': 'ยอดซื้อสุทธิ',
     'report.totalItems': 'รายการที่ซื้อ',
     'report.totalProduced': 'ยอดผลิตรวม',
     'report.print': 'พิมพ์รายงาน',
+    'report.aiAnalysis': 'บทวิเคราะห์โดย AI (AI Analyst)',
+    'report.generateAI': 'สร้างบทวิเคราะห์',
+    'report.customerRisk': 'ความเสี่ยงพึ่งพาลูกค้า (Customer Risk)',
+    'report.laborEff': 'ความคุ้มค่าแรงงาน',
 
     // Purchasing
     'pur.rfq': 'เปรียบเทียบราคา (RFQ)',
@@ -427,7 +437,12 @@ const translations: Record<Language, Record<string, string>> = {
     'report.title': '年报',
     'report.purchasing': '采购报告',
     'report.production': '生产报告',
+    'report.sales': '销售报告',
     'report.print': '打印',
+    'report.aiAnalysis': 'AI 分析',
+    'report.generateAI': '生成分析',
+    'report.customerRisk': '客户风险',
+    'report.laborEff': '劳动效率',
 
     // Purchasing
     'pur.rfq': '报价比较 (RFQ)',

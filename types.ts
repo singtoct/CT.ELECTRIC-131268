@@ -61,12 +61,20 @@ export interface InventoryItem {
 export interface WarehouseLocation {
   id: string;
   name: string; // e.g., "A-01-01" (Zone-Rack-Level)
-  zone: string; // "Raw Material", "Finished Goods", "Quarantine"
-  type: 'Rack' | 'Floor' | 'Bin';
+  zone: string; // "Raw Material", "Finished Goods", "Quarantine", "Structure"
+  type: 'Rack' | 'Floor' | 'Bin' | 'Wall' | 'Door' | 'Obstacle';
   capacity: number; // Max capacity in kg or pallets
   description?: string;
   tags?: string[]; // e.g., ["Plastic", "Fast Moving"]
-  priority?: 'High' | 'Medium' | 'Low'; // For ABC Analysis visualization
+  priority?: 'High' | 'Medium' | 'Low'; 
+  
+  // Visual Layout Properties
+  x?: number;
+  y?: number;
+  w?: number; // Width in px
+  h?: number; // Height in px
+  rotation?: number; // 0, 90, 180, 270
+  color?: string; // Optional custom color
 }
 
 export interface Machine {

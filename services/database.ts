@@ -1,5 +1,5 @@
 
-import { FactoryData } from '../types';
+import { FactoryData, WarehouseLocation } from '../types';
 
 // Generate many sample items for testing pagination
 const generateSampleOrders = (count: number) => {
@@ -32,30 +32,46 @@ const generateSamplePOs = (count: number) => {
 };
 
 // Generate Warehouse Locations (Zone A: Raw, Zone B: Finished, Zone Q: Quarantine)
-const generateLocations = () => {
-    const locs = [];
+const generateLocations = (): WarehouseLocation[] => {
+    const locs: WarehouseLocation[] = [];
     
-    // Zone A: Raw Materials (Racks A-01 to A-06)
+    // Wall Structure (Simulated boundary)
+    locs.push({ id: 'wall-l', name: 'Wall', zone: 'Structure', type: 'Wall', capacity: 0, x: 50, y: 50, w: 20, h: 800 });
+    locs.push({ id: 'wall-t', name: 'Wall', zone: 'Structure', type: 'Wall', capacity: 0, x: 50, y: 50, w: 700, h: 20 });
+    locs.push({ id: 'wall-r', name: 'Wall', zone: 'Structure', type: 'Wall', capacity: 0, x: 730, y: 50, w: 20, h: 800 });
+    locs.push({ id: 'door-1', name: 'Main Entrance', zone: 'Structure', type: 'Door', capacity: 0, x: 350, y: 830, w: 100, h: 20 });
+
+    // Zone A: Raw Materials (Racks A-01 to A-06) - Left Side
     for(let i=1; i<=6; i++) {
+        const col = (i-1) % 2;
+        const row = Math.floor((i-1) / 2);
         locs.push({
             id: `loc-a-${i}`,
             name: `A-0${i}`,
             zone: 'Raw Material',
             type: 'Rack',
             capacity: 2000,
-            description: 'โซนวัตถุดิบหลัก (PC/ABS)'
+            description: 'โซนวัตถุดิบหลัก (PC/ABS)',
+            x: 120 + (col * 80),
+            y: 150 + (row * 120),
+            w: 60,
+            h: 90
         });
     }
 
-    // Zone B: Finished Goods (Racks B-01 to B-10)
-    for(let i=1; i<=10; i++) {
+    // Zone B: Finished Goods (Racks B-01 to B-10) - Right Side / Long
+    for(let i=1; i<=6; i++) {
         locs.push({
             id: `loc-b-${i}`,
             name: `B-${String(i).padStart(2, '0')}`,
             zone: 'Finished Goods',
             type: 'Rack',
             capacity: 5000,
-            description: 'โซนสินค้าสำเร็จรูป พร้อมส่ง'
+            description: 'โซนสินค้าสำเร็จรูป',
+            x: 550,
+            y: 150 + ((i-1) * 100),
+            w: 120,
+            h: 60
         });
     }
 
@@ -66,7 +82,24 @@ const generateLocations = () => {
         zone: 'Quarantine',
         type: 'Floor',
         capacity: 1000,
-        description: 'พื้นที่พักสินค้า QC'
+        description: 'พื้นที่พักสินค้า QC',
+        x: 550,
+        y: 750,
+        w: 120,
+        h: 80
+    });
+
+    // WC
+    locs.push({
+        id: `wc-1`,
+        name: `WC`,
+        zone: 'Structure',
+        type: 'Obstacle',
+        capacity: 0,
+        x: 650,
+        y: 70,
+        w: 60,
+        h: 60
     });
 
     return locs;
