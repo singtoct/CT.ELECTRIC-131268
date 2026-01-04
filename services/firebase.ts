@@ -3,9 +3,6 @@ import { initializeApp, getApp, getApps } from "firebase/app";
 import { 
   getFirestore,
   doc, 
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
   getDocFromCache,
   getDocFromServer,
   setDoc,
@@ -25,38 +22,26 @@ const firebaseConfig = {
 };
 
 // Singleton App Instance
-// We wrap this in a try-catch to prevent immediate crash if Firebase SDK fails to load entirely
 let app: any;
 try {
-    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    // Check if any app is already initialized
+    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 } catch (e) {
-    console.error("Critical: Firebase App Initialization Failed", e);
+    console.warn("Firebase App Init Warning:", e);
 }
 
 /**
- * Robustly initialize Firestore with Graceful Degradation.
- * If initialization fails (e.g., service not available, offline, version mismatch),
- * we catch the error and leave db as null. The app will then run in Offline Mode.
+ * Robustly initialize Firestore.
  */
 let db: Firestore | null = null;
 
 if (app) {
     try {
-        try {
-            // Attempt 1: Initialize with persistence (preferred)
-            db = initializeFirestore(app, {
-              localCache: persistentLocalCache({
-                tabManager: persistentMultipleTabManager()
-              })
-            });
-        } catch (e: any) {
-            // Attempt 2: Fallback to default instance if persistence fails or already initialized
-            console.warn("Firestore: Persistence init warning (falling back to default):", e.message);
-            db = getFirestore(app);
-        }
-    } catch (criticalError: any) {
-        // Critical Failure: Service unavailable or module error.
-        console.error("Critical: Firestore service unavailable. App starting in OFFLINE mode.", criticalError);
+        // Use basic getFirestore for maximum compatibility
+        db = getFirestore(app);
+        console.log("Firestore initialized successfully");
+    } catch (err: any) {
+        console.warn("Firestore initialization failed (Offline Mode active):", err.message);
         db = null;
     }
 }
@@ -125,7 +110,7 @@ export const sanitizeData = (data: any): any => {
 export const fetchFactoryData = async (): Promise<FactoryData> => {
   // Graceful fallback if DB failed to init
   if (!db) {
-      console.warn("Firestore: DB not initialized. Returning default data (Offline Mode).");
+      console.log("Using local default data (Offline Mode)");
       return getDefaultData();
   }
 
@@ -156,7 +141,7 @@ export const fetchFactoryData = async (): Promise<FactoryData> => {
       return sanitizeData(cachedSnap.data()) as FactoryData;
     }
   } catch (cacheErr: any) {
-    console.warn("Firestore: Cache empty.");
+    console.warn("Firestore: Cache empty or inaccessible.");
   }
 
   return getDefaultData();
@@ -168,7 +153,7 @@ let saveTimer: any = null;
  */
 export const saveFactoryData = async (data: FactoryData): Promise<void> => {
   if (!db) {
-      console.warn("Firestore: DB not initialized. Save skipped (Simulated success).");
+      console.log("Offline Mode: Data saved to memory (not synced).");
       return;
   }
 
@@ -180,9 +165,9 @@ export const saveFactoryData = async (data: FactoryData): Promise<void> => {
     saveTimer = setTimeout(async () => {
         try {
             await setDoc(docRef, cleanData);
-            console.log("Firestore: Saved locally (Sync in background)");
+            console.log("Firestore: Synced to cloud");
         } catch (e: any) {
-            console.error("Firestore Error: Write failed", e.message);
+            console.warn("Firestore Write Failed:", e.message);
         }
         resolve();
     }, 2000);

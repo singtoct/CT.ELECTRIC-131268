@@ -171,8 +171,7 @@ const Reports: React.FC = () => {
       setIsAiLoading(true);
       try {
           const ai = new GoogleGenAI({ apiKey });
-          const model = ai.models.getGenerativeModel({ model: 'gemini-2.5-flash-lite-latest' }); // Using generic model alias for safety
-
+          
           const prompt = `
             Act as a Senior Factory Operations Analyst. Analyze this factory data for Year ${year} and write an Executive Summary for the CEO.
             The CEO is skeptical about hiring more staff because he thinks current demand is temporary from one big client.
@@ -194,8 +193,14 @@ const Reports: React.FC = () => {
             Format: Use Markdown (Bold, Bullet points). Keep it professional, concise, and convincing. Thai Language.
           `;
 
-          const result = await model.generateContent({ contents: [{ role: 'user', parts: [{ text: prompt }] }] });
-          setAiInsight(result.response.text());
+          const result = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt
+          });
+          
+          if (result.text) {
+              setAiInsight(result.text);
+          }
       } catch (error) {
           console.error("AI Error:", error);
           setAiInsight("ไม่สามารถเชื่อมต่อ AI ได้ในขณะนี้ (ตรวจสอบ API Key หรืออินเทอร์เน็ต)");
