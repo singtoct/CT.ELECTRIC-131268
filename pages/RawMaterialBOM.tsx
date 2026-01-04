@@ -4,14 +4,14 @@ import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
     Search, Trash2, Plus, Copy, Database, 
-    FileSpreadsheet, CheckCircle, ChevronDown
+    FileSpreadsheet, CheckCircle, ChevronDown, Printer, X, QrCode, Tag
 } from 'lucide-react';
 import { InventoryItem, Product, BOMItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
 
 const RawMaterialBOM: React.FC = () => {
     const data = useFactoryData();
-    const { factory_products = [], packing_raw_materials = [] } = data;
+    const { factory_products = [], packing_raw_materials = [], factory_settings } = data;
     const { updateData } = useFactoryActions();
     const { t } = useTranslation();
 
@@ -21,6 +21,9 @@ const RawMaterialBOM: React.FC = () => {
     
     const [localMaterials, setLocalMaterials] = useState<InventoryItem[]>([]);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+    // Sticker / Label State
+    const [labelItem, setLabelItem] = useState<InventoryItem | null>(null);
 
     useEffect(() => {
         setLocalMaterials(packing_raw_materials);
@@ -63,13 +66,34 @@ const RawMaterialBOM: React.FC = () => {
         alert("Copied to clipboard");
     };
 
-    // NUCLEAR FIX: Forced visibility styles for all input fields
     const inputBase = "w-full !bg-white !text-slate-900 border border-slate-300 rounded-lg px-4 py-2.5 text-sm font-bold focus:ring-4 focus:ring-primary-50 focus:border-primary-500 outline-none shadow-sm transition-all";
     const tableInput = "w-full !bg-white !text-slate-900 border border-slate-300 rounded-lg px-2 py-1.5 text-center font-bold focus:ring-2 focus:ring-primary-500 outline-none shadow-inner";
 
     return (
         <div className="flex flex-col h-[calc(100vh-100px)] space-y-6">
-            <div className="flex items-center justify-between">
+            {/* Global Print Styles */}
+            <style type="text/css" media="print">{`
+                @page { size: auto; margin: 0mm; }
+                body * { visibility: hidden; }
+                .print-label-container, .print-label-container * { visibility: visible; }
+                .print-label-container {
+                    position: fixed;
+                    left: 50%;
+                    top: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 100mm;
+                    height: 70mm;
+                    border: 2px solid black;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    padding: 5mm;
+                    background: white;
+                }
+                .no-print { display: none !important; }
+            `}</style>
+
+            <div className="flex items-center justify-between no-print">
                 <div>
                     <h2 className="text-2xl font-black text-slate-800 tracking-tight">จัดการคลังและสูตรผลิต</h2>
                     <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Raw Material & BOM Control</p>
@@ -81,7 +105,7 @@ const RawMaterialBOM: React.FC = () => {
             </div>
 
             {activeTab === 'inventory' ? (
-                <div className="flex-1 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col animate-in fade-in duration-300">
+                <div className="flex-1 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col animate-in fade-in duration-300 no-print">
                     <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between">
                          <div className="relative w-full max-w-md">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -98,16 +122,29 @@ const RawMaterialBOM: React.FC = () => {
                                     <th className="px-6 py-5 w-40 text-center">จำนวนคงเหลือ</th>
                                     <th className="px-6 py-5 w-24 text-center">หน่วย</th>
                                     <th className="px-8 py-5 w-40 text-right">ต้นทุน/หน่วย</th>
+                                    <th className="px-6 py-5 text-center">Sticker</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredMaterials.map(m => (
                                     <tr key={m.id} className="hover:bg-slate-50/50 transition-colors group">
                                         <td className="px-8 py-4"><input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => setSelectedIds(prev => prev.includes(m.id) ? prev.filter(i=>i!==m.id) : [...prev, m.id])} className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500" /></td>
-                                        <td className="px-6 py-4 font-black text-slate-700 text-base">{m.name}</td>
+                                        <td className="px-6 py-4 font-black text-slate-700 text-base">
+                                            {m.name}
+                                            <div className="text-[10px] text-slate-400 font-mono mt-0.5 font-normal">{m.id}</div>
+                                        </td>
                                         <td className="px-6 py-4 text-center"><input type="number" value={m.quantity} onChange={(e) => handleLocalChange(m.id, 'quantity', parseFloat(e.target.value))} onBlur={saveChanges} className={tableInput} /></td>
                                         <td className="px-6 py-4 text-center font-black text-slate-400">{m.unit}</td>
                                         <td className="px-8 py-4 text-right font-mono font-black text-slate-800 text-lg">฿{(m.costPerUnit || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            <button 
+                                                onClick={() => setLabelItem(m)}
+                                                className="p-2 bg-slate-100 text-slate-500 hover:bg-slate-800 hover:text-white rounded-xl transition-all shadow-sm"
+                                                title="Print Sticker"
+                                            >
+                                                <Printer size={18}/>
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -115,7 +152,7 @@ const RawMaterialBOM: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="flex-1 flex gap-6 overflow-hidden animate-in fade-in duration-300">
+                <div className="flex-1 flex gap-6 overflow-hidden animate-in fade-in duration-300 no-print">
                     {/* Product Selector Sidebar */}
                     <div className="w-96 flex flex-col gap-4">
                         <div className="relative">
@@ -222,6 +259,80 @@ const RawMaterialBOM: React.FC = () => {
                                 <p className="font-black uppercase tracking-[5px] text-slate-400">Select Item</p>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Sticker Print Modal */}
+            {labelItem && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in no-print">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in">
+                        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <h3 className="font-black text-slate-800 flex items-center gap-2"><Tag size={20}/> Print Preview</h3>
+                            <button onClick={() => setLabelItem(null)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full"><X size={24}/></button>
+                        </div>
+                        
+                        <div className="p-8 bg-slate-100 flex justify-center">
+                            {/* Visual representation of the label for the UI */}
+                            <div className="bg-white border-2 border-black w-[400px] h-[250px] p-6 flex flex-col justify-between shadow-xl relative">
+                                <div className="absolute top-2 right-2 border-2 border-black p-1">
+                                    <QrCode size={48} className="text-black"/>
+                                </div>
+                                <div>
+                                    <h4 className="font-black text-black text-xl uppercase border-b-2 border-black pb-1 mb-2 inline-block">RAW MATERIAL</h4>
+                                    <h2 className="text-3xl font-black text-black leading-tight line-clamp-2">{labelItem.name}</h2>
+                                    <p className="font-mono text-sm font-bold mt-1">ID: {labelItem.id.substring(0,12)}...</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 border-t-2 border-black pt-4">
+                                    <div>
+                                        <span className="block text-[10px] font-bold uppercase">Date Received</span>
+                                        <span className="font-bold text-lg">{labelItem.receivedDate || new Date().toISOString().split('T')[0]}</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="block text-[10px] font-bold uppercase">Lot Number</span>
+                                        <span className="font-black text-xl">{labelItem.lotNumber || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Hidden Printable Area (Used by @media print) */}
+                        <div className="print-label-container">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h4 className="font-black text-black text-lg uppercase border-b-2 border-black inline-block mb-2">RAW MATERIAL</h4>
+                                    <h1 className="text-4xl font-black text-black leading-none mb-2">{labelItem.name}</h1>
+                                    <p className="font-mono text-xs font-bold">ID: {labelItem.id}</p>
+                                </div>
+                                <div className="border-4 border-black p-2">
+                                    {/* Using a placeholder for QR code in print view to avoid external dependencies, visual representation only */}
+                                    <div className="w-16 h-16 bg-black flex items-center justify-center text-white font-bold text-[8px] text-center p-1">
+                                        SCAN ME
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="border-t-4 border-black pt-2 mt-2 grid grid-cols-2 gap-4">
+                                <div>
+                                    <span className="block text-xs font-bold uppercase">RECEIVED DATE</span>
+                                    <span className="font-bold text-2xl">{labelItem.receivedDate || new Date().toISOString().split('T')[0]}</span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="block text-xs font-bold uppercase">LOT NUMBER</span>
+                                    <span className="font-black text-3xl">{labelItem.lotNumber || 'N/A'}</span>
+                                </div>
+                            </div>
+                            <div className="text-center text-[10px] font-bold mt-2 pt-1 border-t border-black">
+                                {factory_settings?.companyInfo?.name || 'FACTORY OS INTERNAL TAG'}
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-white border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={() => setLabelItem(null)} className="px-6 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancel</button>
+                            <button onClick={() => window.print()} className="px-8 py-3 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-black transition-all flex items-center gap-2">
+                                <Printer size={20}/> Print Label
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
