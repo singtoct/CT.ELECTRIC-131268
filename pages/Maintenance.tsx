@@ -6,18 +6,28 @@ import {
     List, ChevronDown, User, Clock, 
     PlusCircle, ChevronRight, Play, 
     X, Save,
-    ArrowUpRight, Move, Edit3, Calendar, PauseCircle, CheckCircle2, Trash2, MonitorPlay
+    ArrowUpRight, Move, Edit3, Calendar, PauseCircle, CheckCircle2, Trash2, MonitorPlay,
+    Factory
 } from 'lucide-react';
-import { Machine, MoldingLog, PackingOrder } from '../types';
+import { Machine, MoldingLog, ProductionDocumentItem } from '../types';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
+// Helper interface for Queue Items derived from Production Docs
+interface QueueItem extends ProductionDocumentItem {
+    docId: string;
+    docNumber: string;
+    customerName: string;
+    remainingQty: number;
+    progress: number;
+}
 
 const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => {
   const data = useFactoryData();
   const { 
       factory_machines = [], 
       molding_logs = [], 
-      packing_orders = [], 
+      production_documents = [], // Changed from packing_orders to production_documents
       factory_products = [],
       packing_employees = [] 
   } = data;
@@ -57,9 +67,37 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
       }
   }, [manageJob, factory_machines]);
 
-  const waitingJobs = useMemo(() => 
-    packing_orders.filter(o => o.status === 'Open' || o.status === 'In Progress')
-  , [packing_orders]);
+  // --- LOGIC: Derive Queue from Approved Production Documents ---
+  const waitingJobs = useMemo(() => {
+      const queue: QueueItem[] = [];
+
+      production_documents.forEach(doc => {
+          // Only consider Approved or In Progress documents
+          if (doc.status !== 'Approved' && doc.status !== 'In Progress' && doc.status !== 'Material Checking') return;
+
+          doc.items.forEach(item => {
+              // Calculate how much has been produced for this specific item in this specific document
+              const relevantLogs = molding_logs.filter(l => l.orderId === doc.id && l.productName === item.productName);
+              const totalProduced = relevantLogs.reduce((sum, l) => sum + (l.quantityProduced || 0), 0);
+              const remaining = Math.max(0, item.quantity - totalProduced);
+
+              // If there is work left to do
+              if (remaining > 0) {
+                  queue.push({
+                      ...item,
+                      docId: doc.id,
+                      docNumber: doc.docNumber,
+                      customerName: doc.customerName,
+                      remainingQty: remaining,
+                      progress: (totalProduced / item.quantity) * 100
+                  });
+              }
+          });
+      });
+
+      // Sort by Due Date
+      return queue.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [production_documents, molding_logs]);
 
   const idleMachines = useMemo(() => 
     factory_machines.filter(m => m.status === 'ว่าง' || m.status === 'Idle')
@@ -77,22 +115,22 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
 
   // --- Actions ---
 
-  const handleAssignJob = async (machine: Machine, order: PackingOrder) => {
+  const handleAssignJob = async (machine: Machine, queueItem: QueueItem) => {
     const newLog: MoldingLog = {
         id: generateId(),
-        jobId: `JOB-${order.lotNumber || 'TEMP'}-${Date.now().toString().slice(-4)}`,
-        orderId: order.id,
+        jobId: `JOB-${queueItem.docNumber.replace('PO-', '')}-${Date.now().toString().slice(-4)}`,
+        orderId: queueItem.docId,
         quantityRejected: 0,
         operatorName: '---ยังไม่ระบุ---',
-        productName: order.name,
+        productName: queueItem.productName,
         shift: 'เช้า',
-        lotNumber: order.lotNumber || '-',
+        lotNumber: queueItem.docNumber, // Using PO Number as Lot Reference
         date: new Date().toISOString().split('T')[0],
         status: 'กำลังผลิต',
-        productId: '',
+        productId: queueItem.productId,
         machine: machine.name,
         quantityProduced: 0,
-        targetQuantity: order.quantity,
+        targetQuantity: queueItem.remainingQty, // Default target is remaining amount
         startTime: new Date().toISOString(),
         priority: 10
     };
@@ -101,15 +139,17 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
         m.id === machine.id ? { ...m, status: 'ทำงาน' } : m
     );
 
-    const updatedOrders = packing_orders.map(o => 
-        o.id === order.id ? { ...o, status: 'In Progress' } : o
+    // We don't change doc status here immediately, it stays 'Approved'/'In Progress' until fully done
+    // But we might want to ensure the doc status is at least 'In Progress'
+    const updatedDocs = production_documents.map(d => 
+        d.id === queueItem.docId && d.status === 'Approved' ? { ...d, status: 'In Progress' } : d
     );
 
     await updateData({ 
         ...data, 
         molding_logs: [...molding_logs, newLog],
         factory_machines: updatedMachines,
-        packing_orders: updatedOrders
+        production_documents: updatedDocs
     });
     setShowAssignModal(false);
   };
@@ -120,6 +160,7 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
     const updatedLogs = molding_logs.map(l => {
         if (l.id === activeLog.id) {
             const newTotal = (l.quantityProduced || 0) + logQty;
+            // Check if this specific job is done
             const isFinished = newTotal >= (l.targetQuantity || 0);
             return { 
                 ...l, 
@@ -228,7 +269,7 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                 <div className="flex items-center gap-2">
                     {!isSidebarOpen && (
                         <button onClick={() => setIsSidebarOpen(true)} className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm">
-                            <List size={16} /> แสดงคิวงาน
+                            <List size={16} /> แสดงคิวงาน (Production Queue)
                         </button>
                     )}
                 </div>
@@ -340,43 +381,55 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
         ${isSidebarOpen ? 'translate-x-0 w-[380px]' : 'translate-x-full w-0 opacity-0 pointer-events-none'}`}
       >
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <h3 className="text-lg font-black text-slate-800">คิวรอฉีด ({waitingJobs.length})</h3>
+            <div>
+                <h3 className="text-lg font-black text-slate-800">คิวรอฉีด ({waitingJobs.length})</h3>
+                <p className="text-[10px] text-slate-400 font-bold">Approved POs (Pending Production)</p>
+            </div>
             <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors">
                 <ChevronRight size={20} />
             </button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-slate-50/30">
             {waitingJobs.map((job) => (
-                <div key={job.id} onClick={() => { 
+                <div key={`${job.docId}-${job.id}`} onClick={() => { 
                     if (!isSidebarOpen) return;
                     const idleMachine = factory_machines.find(m => m.status === 'ว่าง');
                     if(idleMachine) handleAssignJob(idleMachine, job);
                     else alert("ไม่มีเครื่องจักรว่าง กรุณาเลือกเครื่องจักรด้วยตนเอง");
                 }} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div>
-                    <div className="flex justify-between items-start mb-3">
-                        <h4 className="font-black text-slate-800 text-sm leading-tight group-hover:text-blue-600 transition-colors">{job.name}</h4>
+                    <div className="flex justify-between items-start mb-2">
+                        <span className="bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold text-[10px] uppercase border border-slate-200">PO: {job.docNumber}</span>
+                        {job.progress > 0 && <span className="text-[10px] text-blue-600 font-bold">{job.progress.toFixed(0)}% Done</span>}
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] font-mono mb-3">
-                        <span className="bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold border border-slate-200">LOT: {job.lotNumber}</span>
-                        <span className="bg-rose-50 text-rose-600 px-2 py-1 rounded font-bold border border-rose-100">{job.quantity.toLocaleString()} Pcs</span>
+                    <h4 className="font-black text-slate-800 text-sm leading-tight group-hover:text-blue-600 transition-colors mb-3">{job.productName}</h4>
+                    
+                    <div className="flex items-center gap-2 text-[11px] font-mono mb-1">
+                        <span className="text-slate-400 font-bold">เหลือผลิต:</span>
+                        <span className="text-rose-600 font-black text-sm">{job.remainingQty.toLocaleString()}</span>
+                        <span className="text-slate-400 font-bold">/ {job.quantity.toLocaleString()}</span>
                     </div>
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                        <span className="text-slate-400 text-[10px] font-bold">Due: {job.dueDate}</span>
-                        <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold">Assign <ArrowUpRight size={12}/></span>
+                    
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-3">
+                        <div className="flex flex-col">
+                            <span className="text-slate-400 text-[9px] font-bold uppercase">Customer</span>
+                            <span className="text-[10px] font-bold text-slate-700 truncate max-w-[150px]">{job.customerName || '-'}</span>
+                        </div>
+                        <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold bg-blue-50 px-2 py-1 rounded-lg">Assign <ArrowUpRight size={12}/></span>
                     </div>
                 </div>
             ))}
             {waitingJobs.length === 0 && (
                 <div className="text-center py-20 text-slate-400">
-                    <List size={40} className="mx-auto mb-2 opacity-20"/>
-                    <p className="text-sm font-bold">ไม่มีงานรอในคิว</p>
+                    <Factory size={40} className="mx-auto mb-4 opacity-20"/>
+                    <p className="text-sm font-bold text-slate-600">ไม่มีงานค้าง</p>
+                    <p className="text-xs mt-1">ใบสั่งผลิตทั้งหมดถูกจ่ายงานแล้ว หรือยังไม่ได้รับการอนุมัติ</p>
                 </div>
             )}
         </div>
       </div>
 
-      {/* --- UNIFIED MANAGE JOB MODAL (THE NEW FEATURE) --- */}
+      {/* --- UNIFIED MANAGE JOB MODAL --- */}
       {manageJob && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
               <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -442,7 +495,7 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
 
                           {/* Lot Number */}
                           <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Lot Number</label>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Lot Number / PO</label>
                               <input 
                                 type="text" 
                                 value={manageJob.lotNumber} 
@@ -574,13 +627,13 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                   <div className="p-8 max-h-[60vh] overflow-y-auto space-y-3 custom-scrollbar">
                       {waitingJobs.map(job => (
                           <button 
-                            key={job.id} 
+                            key={`${job.docId}-${job.id}`} 
                             onClick={() => handleAssignJob(selectedMachine, job)}
                             className="w-full text-left p-4 rounded-2xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center justify-between group"
                           >
                               <div>
-                                  <div className="font-black text-slate-800 text-sm">{job.name}</div>
-                                  <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">Lot: {job.lotNumber} | {job.quantity.toLocaleString()} Pcs</div>
+                                  <div className="font-black text-slate-800 text-sm">{job.productName}</div>
+                                  <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">PO: {job.docNumber} | {job.remainingQty.toLocaleString()} Pcs</div>
                               </div>
                               <ArrowUpRight className="text-slate-300 group-hover:text-blue-500" size={20}/>
                           </button>
