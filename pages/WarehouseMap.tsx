@@ -138,20 +138,28 @@ const WarehouseMap: React.FC = () => {
             h: type === 'Rack' ? 100 : type === 'Floor' ? 80 : type === 'Wall' ? 200 : 20,
             rotation: 0
         };
-        await updateData({ ...data, warehouse_locations: [...warehouse_locations, newLoc] });
+        const updatedList = [...warehouse_locations, newLoc];
+        setLocalLocations(updatedList); // Immediate UI update
+        await updateData({ ...data, warehouse_locations: updatedList });
     };
 
     const handleDeleteLocation = async (id: string) => {
-        if (!confirm("Are you sure?")) return;
-        const newLocs = warehouse_locations.filter(l => l.id !== id);
-        await updateData({ ...data, warehouse_locations: newLocs });
+        if (!confirm("Confirm Delete? (ยืนยันการลบ?)")) return;
+        
+        // Immediate UI Update
+        const newLocs = localLocations.filter(l => l.id !== id);
+        setLocalLocations(newLocs);
         setSelectedLocation(null);
         setEditLocationForm(null);
+
+        // Background Sync
+        await updateData({ ...data, warehouse_locations: newLocs });
     };
 
     const handleSaveLocation = async () => {
         if (!editLocationForm || !editLocationForm.id) return;
         const updatedLocs = warehouse_locations.map(l => l.id === editLocationForm.id ? { ...l, ...editLocationForm } as WarehouseLocation : l);
+        setLocalLocations(updatedLocs); // Immediate
         await updateData({ ...data, warehouse_locations: updatedLocs });
         setEditLocationForm(null);
         setSelectedLocation(null);
@@ -233,6 +241,9 @@ const WarehouseMap: React.FC = () => {
             default: return 'bg-slate-100 text-slate-500 border-slate-200';
         }
     };
+
+    // Shared input styles - ensuring text visibility and background color
+    const inputStyle = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 font-bold focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none shadow-sm";
 
     return (
         <div className="space-y-6 pb-10 h-full flex flex-col" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
@@ -403,11 +414,11 @@ const WarehouseMap: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Name</label>
-                                    <input type="text" value={editLocationForm.name} onChange={e => setEditLocationForm({...editLocationForm, name: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 font-bold text-sm" />
+                                    <input type="text" value={editLocationForm.name} onChange={e => setEditLocationForm({...editLocationForm, name: e.target.value})} className={inputStyle} />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Zone</label>
-                                    <select value={editLocationForm.zone} onChange={e => setEditLocationForm({...editLocationForm, zone: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 font-bold text-sm bg-white">
+                                    <select value={editLocationForm.zone} onChange={e => setEditLocationForm({...editLocationForm, zone: e.target.value})} className={inputStyle}>
                                         <option value="Raw Material">Raw Material</option>
                                         <option value="Finished Goods">Finished Goods</option>
                                         <option value="Quarantine">Quarantine</option>
@@ -418,21 +429,39 @@ const WarehouseMap: React.FC = () => {
                             
                             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Maximize size={10}/> Layout Dimensions</p>
-                                <div className="grid grid-cols-3 gap-3">
+                                <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[9px] font-bold text-slate-400 mb-1">Width (px)</label>
-                                        <input type="number" value={editLocationForm.w} onChange={e => setEditLocationForm({...editLocationForm, w: parseInt(e.target.value) || 0})} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-center text-sm font-bold" />
+                                        <input type="number" value={editLocationForm.w} onChange={e => setEditLocationForm({...editLocationForm, w: parseInt(e.target.value) || 0})} className={inputStyle + " text-center"} />
                                     </div>
                                     <div>
                                         <label className="block text-[9px] font-bold text-slate-400 mb-1">Height (px)</label>
-                                        <input type="number" value={editLocationForm.h} onChange={e => setEditLocationForm({...editLocationForm, h: parseInt(e.target.value) || 0})} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-center text-sm font-bold" />
+                                        <input type="number" value={editLocationForm.h} onChange={e => setEditLocationForm({...editLocationForm, h: parseInt(e.target.value) || 0})} className={inputStyle + " text-center"} />
                                     </div>
-                                    <div>
-                                        <label className="block text-[9px] font-bold text-slate-400 mb-1">Rotate (°)</label>
-                                        <div className="flex gap-1">
-                                            <input type="number" value={editLocationForm.rotation} onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value) || 0})} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-center text-sm font-bold" />
-                                            <button onClick={() => setEditLocationForm(prev => ({...prev, rotation: (prev?.rotation || 0) + 90}))} className="bg-white border rounded text-slate-500 hover:bg-slate-100 px-1"><RotateCw size={12}/></button>
-                                        </div>
+                                </div>
+                                
+                                {/* Slanted / Rotation Control */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="block text-[9px] font-bold text-slate-400">Rotate (Slanted Area)</label>
+                                        <span className="text-[10px] font-black text-amber-600">{editLocationForm.rotation || 0}°</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <RotateCw size={14} className="text-slate-400"/>
+                                        <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="360" 
+                                            value={editLocationForm.rotation || 0} 
+                                            onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value)})}
+                                            className="w-full accent-amber-500 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                        <input 
+                                            type="number" 
+                                            value={editLocationForm.rotation || 0} 
+                                            onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value)})}
+                                            className="w-16 border border-slate-300 rounded-lg px-1 py-1 text-center text-xs font-bold text-slate-900 bg-white"
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -440,11 +469,11 @@ const WarehouseMap: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Capacity</label>
-                                    <input type="number" value={editLocationForm.capacity} onChange={e => setEditLocationForm({...editLocationForm, capacity: parseInt(e.target.value)})} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                                    <input type="number" value={editLocationForm.capacity} onChange={e => setEditLocationForm({...editLocationForm, capacity: parseInt(e.target.value)})} className={inputStyle} />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Priority</label>
-                                    <select value={editLocationForm.priority || 'Medium'} onChange={e => setEditLocationForm({...editLocationForm, priority: e.target.value as any})} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white font-bold">
+                                    <select value={editLocationForm.priority || 'Medium'} onChange={e => setEditLocationForm({...editLocationForm, priority: e.target.value as any})} className={inputStyle}>
                                         <option value="High">High</option>
                                         <option value="Medium">Medium</option>
                                         <option value="Low">Low</option>
@@ -454,8 +483,8 @@ const WarehouseMap: React.FC = () => {
                         </div>
                         <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between gap-4">
                             {editLocationForm.id && (
-                                <button onClick={() => handleDeleteLocation(editLocationForm.id!)} className="text-red-500 font-bold text-xs flex items-center gap-1 hover:underline">
-                                    <Trash2 size={14}/> Delete
+                                <button onClick={() => handleDeleteLocation(editLocationForm.id!)} className="text-red-600 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1 transition-all">
+                                    <Trash2 size={16}/> Delete Object
                                 </button>
                             )}
                             <button onClick={handleSaveLocation} className="bg-amber-500 text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg hover:bg-amber-600 transition-all flex items-center gap-2 ml-auto">
