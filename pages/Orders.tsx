@@ -1,176 +1,215 @@
 
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
-    Search, Plus, Printer, Edit2, Trash2, ChevronDown, 
-    ChevronUp, Save, X, CheckCircle2, AlertTriangle, FileText, Package,
-    Database, Droplet, ChevronLeft, ChevronRight
+    Search, Package, Calculator,
+    ArrowRight, ChevronDown, ChevronUp, FilePlus2, 
+    AlertOctagon, CheckCircle2, Factory, LayoutList
 } from 'lucide-react';
-import { ProductionDocument, ProductionDocumentItem, MoldingLog, Product } from '../types';
-import SearchableSelect from '../components/SearchableSelect';
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
-const ITEMS_PER_PAGE = 10;
+import { ProductionDocument, MoldingLog } from '../types';
 
 const Orders: React.FC = () => {
   const data = useFactoryData();
-  const { production_documents = [], factory_products = [], packing_raw_materials = [] } = data;
-  const { updateData } = useFactoryActions();
+  const { 
+      production_documents = [], 
+      packing_inventory = [],
+      molding_logs = []
+  } = data;
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
-  const [search, setSearch] = useState('');
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [currentDoc, setCurrentDoc] = useState<ProductionDocument | null>(null);
-  const [expandedDocs, setExpandedDocs] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [expandedProducts, setExpandedProducts] = useState<string[]>([]);
 
-  const productOptions = useMemo(() => 
-    factory_products.map(p => ({ value: p.name, label: p.name }))
-  , [factory_products]);
+  // --- MRP LOGIC ---
+  const planningData = useMemo(() => {
+      const productMap: Record<string, {
+          productName: string,
+          totalDemand: number,
+          delivered: number,
+          stock: number,
+          wip: number,
+          qcPending: number,
+          orders: { docId: string, docNumber: string, qty: number, dueDate: string, status: string }[]
+      }> = {};
 
-  const calculateBOMRequirements = (doc: ProductionDocument) => {
-    const requirements: Record<string, { name: string, needed: number, current: number, unit: string }> = {};
-    doc.items.forEach(item => {
-        const product = factory_products.find(p => p.name === item.productName || p.id === item.productId);
-        if (product && product.bom) {
-            product.bom.forEach(bom => {
-                const totalNeeded = bom.quantityPerUnit * item.quantity;
-                if (!requirements[bom.materialId]) {
-                    const mat = packing_raw_materials.find(m => m.id === bom.materialId);
-                    requirements[bom.materialId] = { name: bom.materialName, needed: 0, current: mat?.quantity || 0, unit: mat?.unit || 'kg' };
-                }
-                requirements[bom.materialId].needed += totalNeeded;
-            });
-        }
-    });
-    return requirements;
+      production_documents.forEach(doc => {
+          if (doc.status === 'Cancelled' || doc.status === 'Draft') return;
+          
+          doc.items.forEach(item => {
+              if (!productMap[item.productName]) {
+                  const stockItem = packing_inventory.find(i => i.name === item.productName && i.isoStatus === 'Released');
+                  const qcItem = packing_inventory.find(i => i.name === item.productName && i.isoStatus === 'Quarantine');
+                  
+                  const wipQty = molding_logs
+                      .filter(l => l.productName === item.productName && (l.status === 'กำลังผลิต' || l.status === 'In Progress'))
+                      .reduce((sum, l) => sum + (l.targetQuantity || 0) - (l.quantityProduced || 0), 0);
+
+                  const completedPendingQC = molding_logs
+                      .filter(l => l.productName === item.productName && l.status === 'รอนับ')
+                      .reduce((sum, l) => sum + (l.quantityProduced || 0), 0);
+
+                  productMap[item.productName] = {
+                      productName: item.productName,
+                      totalDemand: 0,
+                      delivered: 0,
+                      stock: stockItem?.quantity || 0,
+                      wip: wipQty,
+                      qcPending: (qcItem?.quantity || 0) + completedPendingQC,
+                      orders: []
+                  };
+              }
+              
+              productMap[item.productName].totalDemand += item.quantity;
+              productMap[item.productName].orders.push({
+                  docId: doc.id,
+                  docNumber: doc.docNumber,
+                  qty: item.quantity,
+                  dueDate: item.dueDate,
+                  status: doc.status
+              });
+          });
+      });
+
+      return Object.values(productMap).sort((a, b) => b.totalDemand - a.totalDemand);
+  }, [production_documents, packing_inventory, molding_logs]);
+
+  const toggleProductExpand = (name: string) => {
+    setExpandedProducts(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
   };
 
-  const toggleExpand = (id: string) => {
-    setExpandedDocs(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const filteredDocs = useMemo(() => {
-    return production_documents.filter(doc => 
-        doc.docNumber.toLowerCase().includes(search.toLowerCase()) || 
-        doc.customerName.toLowerCase().includes(search.toLowerCase())
-    ).sort((a, b) => b.date.localeCompare(a.date));
-  }, [production_documents, search]);
-
-  const totalPages = Math.ceil(filteredDocs.length / ITEMS_PER_PAGE);
-  const paginatedDocs = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredDocs.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredDocs, currentPage]);
-
-  const handleSaveDoc = async () => {
-    if (!currentDoc) return;
-    let updatedDocs = [...production_documents];
-    const idx = updatedDocs.findIndex(d => d.id === currentDoc.id);
-    if (idx >= 0) updatedDocs[idx] = currentDoc;
-    else updatedDocs.push(currentDoc);
-
-    await updateData({ ...data, production_documents: updatedDocs });
-    setIsEditModalOpen(false);
-    setCurrentDoc(null);
+  const handleCreateProductionOrder = (productName: string, quantity: number) => {
+      navigate('/production-docs', { 
+          state: { 
+              prefillProduct: productName, 
+              prefillQuantity: quantity 
+          } 
+      });
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight">แผนการผลิต (Sales Orders)</h2>
-          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[4px] mt-1">Planning & Order Tracking</p>
+          <h2 className="text-3xl font-black text-slate-800 tracking-tight">แผนการผลิต (MRP Dashboard)</h2>
+          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[4px] mt-1">Material Requirements Planning</p>
         </div>
-        <button onClick={() => { setCurrentDoc({ id: generateId(), docNumber: `PO-${new Date().getFullYear()}${String(production_documents.length + 1).padStart(3, '0')}`, date: new Date().toISOString().split('T')[0], customerName: '', status: 'Draft', items: [{ id: generateId(), productId: '', productName: '', quantity: 0, unit: 'pcs', dueDate: '', note: '' }], createdBy: 'Admin' }); setIsEditModalOpen(true); }} className="flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl hover:bg-slate-800 transition-all active:scale-95"><Plus size={20} /> สร้างใบสั่งผลิตใหม่</button>
-      </div>
-
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="text" placeholder="ค้นหาเลขที่ PO หรือลูกค้า..." className="w-full pl-12 pr-6 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-50 transition-all outline-none" value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <div className="flex items-center gap-2">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronLeft size={20}/></button>
-                <span className="text-sm font-black text-slate-600">หน้า {currentPage} จาก {totalPages || 1}</span>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronRight size={20}/></button>
-            </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest border-b border-slate-100">
-              <tr>
-                <th className="px-6 py-5 w-12"></th>
-                <th className="px-6 py-5">PO Number</th>
-                <th className="px-6 py-5">Customer</th>
-                <th className="px-6 py-5">Date</th>
-                <th className="px-6 py-5 text-center">Status</th>
-                <th className="px-6 py-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {paginatedDocs.map((doc) => {
-                const bomReqs = calculateBOMRequirements(doc);
-                const hasShortage = Object.values(bomReqs).some(r => r.needed > r.current);
-                return (
-                  <React.Fragment key={doc.id}>
-                    <tr className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4"><button onClick={() => toggleExpand(doc.id)} className="text-slate-400">{expandedDocs.includes(doc.id) ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</button></td>
-                      <td className="px-6 py-4 font-black text-primary-600 font-mono">{doc.docNumber}</td>
-                      <td className="px-6 py-4 font-bold text-slate-800">{doc.customerName}</td>
-                      <td className="px-6 py-4 text-slate-500">{doc.date}</td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border uppercase flex items-center justify-center gap-1 w-fit mx-auto ${doc.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : hasShortage ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                          {hasShortage ? <AlertTriangle size={10}/> : null} {doc.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                           <button onClick={() => { setCurrentDoc({...doc}); setIsEditModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={18} /></button>
-                           <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"><Printer size={18} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2 text-slate-500 text-xs font-bold">
+            <Calculator size={16}/> <span>ระบบคำนวณอัตโนมัติจากใบสั่งซื้อ</span>
         </div>
       </div>
 
-      {isEditModalOpen && currentDoc && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col animate-in zoom-in duration-200">
-                  <div className="px-10 py-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">รายละเอียดใบสั่งผลิต</h3>
-                      <button onClick={() => setIsEditModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={28}/></button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto px-10 py-8 space-y-6 max-h-[70vh]">
-                      <div className="grid grid-cols-2 gap-6">
-                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">ชื่อลูกค้า</label><input type="text" value={currentDoc.customerName} onChange={e => setCurrentDoc({...currentDoc, customerName: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl font-bold" /></div>
-                          <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">วันที่สั่งผลิต</label><input type="date" value={currentDoc.date} onChange={e => setCurrentDoc({...currentDoc, date: e.target.value})} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl font-bold" /></div>
-                      </div>
-                      <div className="space-y-4 pt-4">
-                          <div className="flex items-center justify-between"><h4 className="font-black text-slate-700 uppercase text-xs tracking-widest">รายการสินค้า</h4><button onClick={() => setCurrentDoc({...currentDoc, items: [...currentDoc.items, { id: generateId(), productId: '', productName: '', quantity: 0, unit: 'pcs', dueDate: currentDoc.date, note: '' }]})} className="text-primary-600 text-xs font-black hover:underline">+ เพิ่มรายการ</button></div>
-                          {currentDoc.items.map((item, idx) => (
-                              <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-end gap-4">
-                                  <div className="flex-1"><SearchableSelect options={productOptions} value={item.productName} onChange={val => { const newItems = [...currentDoc.items]; newItems[idx].productName = val; setCurrentDoc({...currentDoc, items: newItems}); }} /></div>
-                                  <div className="w-24"><input type="number" value={item.quantity || ''} onChange={e => { const newItems = [...currentDoc.items]; newItems[idx].quantity = parseFloat(e.target.value) || 0; setCurrentDoc({...currentDoc, items: newItems}); }} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-black text-right" /></div>
-                                  <button onClick={() => setCurrentDoc({...currentDoc, items: currentDoc.items.filter((_, i) => i !== idx)})} className="p-2 text-rose-300 hover:text-rose-500"><Trash2 size={20}/></button>
+      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {planningData.map((plan, idx) => {
+              const netRequired = Math.max(0, plan.totalDemand - plan.delivered - plan.stock - plan.wip);
+              const isCritical = netRequired > 0;
+              const isExpanded = expandedProducts.includes(plan.productName);
+
+              return (
+                  <div key={idx} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden group hover:border-blue-200 transition-all">
+                      {/* Header Summary Card */}
+                      <div 
+                        className="p-6 cursor-pointer"
+                        onClick={() => toggleProductExpand(plan.productName)}
+                      >
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                              <div className="flex items-center gap-4 min-w-[250px]">
+                                  <div className={`p-3 rounded-2xl ${isCritical ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                      <Package size={24} />
+                                  </div>
+                                  <div>
+                                      <h3 className="text-lg font-black text-slate-800 group-hover:text-blue-600 transition-colors">{plan.productName}</h3>
+                                      <div className="flex items-center gap-3 mt-1 text-xs font-bold text-slate-400">
+                                          <span>{plan.orders.length} Active Orders</span>
+                                      </div>
+                                  </div>
                               </div>
-                          ))}
+
+                              {/* Metrics Strip */}
+                              <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 text-center">
+                                  <div className="flex flex-col p-2 rounded-xl bg-slate-50/50">
+                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">ยอดสั่งซื้อ (Demand)</span>
+                                      <span className="text-lg font-black text-slate-800">{plan.totalDemand.toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex flex-col p-2 rounded-xl bg-blue-50/50 border border-blue-100/50">
+                                      <span className="text-[9px] font-black text-blue-400 uppercase tracking-wider">สต็อก (Stock)</span>
+                                      <span className="text-lg font-bold text-blue-600">{plan.stock.toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex flex-col p-2 rounded-xl bg-amber-50/50 border border-amber-100/50">
+                                      <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">กำลังผลิต (WIP)</span>
+                                      <span className="text-lg font-bold text-amber-600">{plan.wip.toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex flex-col p-2 rounded-xl bg-purple-50/50 border border-purple-100/50">
+                                      <span className="text-[9px] font-black text-purple-400 uppercase tracking-wider">รอ QC</span>
+                                      <span className="text-lg font-bold text-purple-600">{plan.qcPending.toLocaleString()}</span>
+                                  </div>
+                                  
+                                  {/* Result Column */}
+                                  <div className={`col-span-2 flex items-center justify-between px-4 py-2 rounded-xl border-2 ${isCritical ? 'bg-rose-50 border-rose-100' : 'bg-green-50 border-green-100'}`}>
+                                      <div className="flex flex-col text-left">
+                                          <span className={`text-[9px] font-black uppercase tracking-wider ${isCritical ? 'text-rose-500' : 'text-green-500'}`}>{isCritical ? 'ต้องผลิตเพิ่ม (Shortage)' : 'เพียงพอ (Sufficient)'}</span>
+                                          <span className={`text-xl font-black ${isCritical ? 'text-rose-600' : 'text-green-600'}`}>{netRequired.toLocaleString()}</span>
+                                      </div>
+                                      {isCritical && (
+                                          <button 
+                                            onClick={(e) => { e.stopPropagation(); handleCreateProductionOrder(plan.productName, netRequired); }}
+                                            className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-rose-700 active:scale-95 transition-all flex items-center gap-2"
+                                          >
+                                              <Factory size={14}/> สั่งผลิตทันที
+                                          </button>
+                                      )}
+                                      {!isCritical && <CheckCircle2 className="text-green-400" size={24}/>}
+                                  </div>
+                              </div>
+
+                              <div className="text-slate-300 group-hover:text-slate-500">
+                                  {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                              </div>
+                          </div>
                       </div>
+
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                          <div className="bg-slate-50/50 border-t border-slate-200 p-6">
+                              <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                  <LayoutList size={14}/> รายการออเดอร์ (Order Breakdown)
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {plan.orders.map((order, oIdx) => (
+                                      <div key={oIdx} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                                          <div className="flex justify-between items-start mb-2">
+                                              <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-black font-mono">{order.docNumber}</span>
+                                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${order.status === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{order.status}</span>
+                                          </div>
+                                          
+                                          <div className="space-y-1 mb-3">
+                                              <div className="flex justify-between text-xs">
+                                                  <span className="text-slate-400 font-bold">Demand:</span>
+                                                  <span className="font-black text-slate-800">{order.qty.toLocaleString()}</span>
+                                              </div>
+                                              <div className="flex justify-between text-xs">
+                                                  <span className="text-slate-400 font-bold">Due Date:</span>
+                                                  <span className="font-medium text-slate-600">{order.dueDate}</span>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
                   </div>
-                  <div className="px-10 py-8 bg-slate-50 border-t border-slate-100 flex justify-end gap-4">
-                      <button onClick={() => setIsEditModalOpen(false)} className="px-8 py-4 text-slate-500 font-black hover:bg-slate-200 rounded-2xl transition-all">ยกเลิก</button>
-                      <button onClick={handleSaveDoc} className="px-12 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-slate-800 transition-all active:scale-95">บันทึกข้อมูล</button>
-                  </div>
+              );
+          })}
+          {planningData.length === 0 && (
+              <div className="text-center py-20 text-slate-400 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+                  <Package size={48} className="mx-auto mb-4 opacity-20"/>
+                  <p className="font-bold">ไม่มีข้อมูลคำสั่งซื้อในระบบ</p>
+                  <p className="text-xs mt-1">กรุณาสร้างใบสั่งผลิต (PO) เพื่อเริ่มการคำนวณ MRP</p>
+                  <button onClick={() => navigate('/production-docs')} className="mt-4 px-6 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-all">ไปที่หน้าจัดการเอกสาร</button>
               </div>
-          </div>
-      )}
+          )}
+      </div>
     </div>
   );
 };

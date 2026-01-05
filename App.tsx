@@ -19,6 +19,7 @@ import RawMaterialBOM from './pages/RawMaterialBOM';
 import Purchasing from './pages/Purchasing';
 import WarehouseMap from './pages/WarehouseMap';
 import Reports from './pages/Reports';
+import ProductionOrderDocs from './pages/ProductionOrderDocs'; // Import New Page
 
 import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
@@ -180,6 +181,7 @@ const App: React.FC = () => {
                   <Route path="dashboard" element={<Dashboard />} />
                   <Route path="customers" element={<Customers />} />
                   <Route path="orders" element={<Orders />} />
+                  <Route path="production-docs" element={<ProductionOrderDocs />} /> {/* Added Route */}
                   <Route path="machine-status" element={<Maintenance view="status" />} />
                   <Route path="kanban" element={<Kanban />} />
                   <Route path="production" element={<Production />} />

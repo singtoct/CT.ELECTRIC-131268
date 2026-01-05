@@ -41,11 +41,38 @@
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
       
+      /* --- GLOBAL INPUT VISIBILITY FIX (CRITICAL) --- */
+      /* Force all inputs to have White Background and Dark Text to ensure readability */
+      /* This overrides any tailwind classes that might cause low contrast */
+      input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+      textarea,
+      select {
+        background-color: #ffffff !important;
+        color: #1e293b !important; /* Dark Slate Blue */
+        border-color: #cbd5e1; /* Ensure border is visible */
+      }
+      
+      /* Ensure placeholder text is distinct */
+      ::placeholder {
+        color: #94a3b8 !important; /* Slate-400 */
+        opacity: 1;
+      }
+
+      /* Fix Chrome/Safari Autofill Background Color issue */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover, 
+      input:-webkit-autofill:focus, 
+      input:-webkit-autofill:active{
+          -webkit-box-shadow: 0 0 0 30px white inset !important;
+          -webkit-text-fill-color: #1e293b !important;
+      }
+      /* ----------------------------------------------- */
+
       @media print {
         .print-hidden { display: none !important; }
       }
     </style>
-  <script type="importmap">
+    <script type="importmap">
 {
   "imports": {
     "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?external=react,react-dom",

@@ -5,7 +5,7 @@ import { useTranslation } from '../services/i18n';
 import { 
     Search, Plus, Trash2, X, Edit3, 
     Upload, BarChart3, Sparkles, 
-    Loader2, ChevronDown
+    Loader2, ChevronDown, Check, TrendingUp, AlertCircle
 } from 'lucide-react';
 import { Product } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -53,6 +53,85 @@ const Products: React.FC = () => {
 
     await updateData({ ...data, factory_products: updatedProds });
     setIsModalOpen(false);
+  };
+
+  const handleGenerateAiPrice = async () => {
+    if (!apiKey) {
+      alert("Please set Gemini API Key in Settings first.");
+      return;
+    }
+    if (!currentProduct) return;
+
+    setIsAiCalculating(true);
+    try {
+        const materialCost = calculateProductCost(currentProduct);
+        const ai = new GoogleGenAI({ apiKey });
+        
+        const prompt = `
+          You are a manufacturing pricing expert. Analyze this product to suggest a competitive sale price.
+          
+          Product Details:
+          - Name: ${currentProduct.name}
+          - Category: ${currentProduct.category}
+          - Raw Material Cost (BOM): ${materialCost.toFixed(2)} THB
+          - Cycle Time: ${currentProduct.cycleTimeSeconds} seconds (Impacts labor/machine cost)
+          - Target Profit Margin: ${currentProduct.profitMargin}%
+
+          Your Task:
+          1. Estimate manufacturing overheads (Machine depreciation, Electricity, Labor) typical for a Thai plastic factory.
+          2. Calculate a break-even price (Material + Overhead).
+          3. Recommend a Sale Price that meets the margin target but remains competitive.
+          4. Provide a market price range (Min/Max) for similar plastic products.
+          5. Write a very brief justification (max 2 sentences).
+
+          Output strictly valid JSON.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        breakEvenPrice: { type: Type.NUMBER },
+                        recommendedPrice: { type: Type.NUMBER },
+                        justification: { type: Type.STRING },
+                        marketMinPrice: { type: Type.NUMBER },
+                        marketMaxPrice: { type: Type.NUMBER }
+                    }
+                }
+            }
+        });
+
+        const result = JSON.parse(response.text || "{}");
+        setCurrentProduct(prev => prev ? ({
+            ...prev,
+            aiPriceRecommendation: {
+                breakEvenPrice: result.breakEvenPrice || 0,
+                recommendedPrice: result.recommendedPrice || 0,
+                justification: result.justification || "",
+                marketMinPrice: result.marketMinPrice || 0,
+                marketMaxPrice: result.marketMaxPrice || 0
+            }
+        }) : null);
+
+    } catch (error) {
+        console.error("AI Price Gen Error:", error);
+        alert("Failed to generate price recommendation. Please check API Key.");
+    } finally {
+        setIsAiCalculating(false);
+    }
+  };
+
+  const applyRecommendedPrice = () => {
+      if (currentProduct?.aiPriceRecommendation?.recommendedPrice) {
+          setCurrentProduct({
+              ...currentProduct,
+              salePrice: currentProduct.aiPriceRecommendation.recommendedPrice
+          });
+      }
   };
 
   const filteredProducts = useMemo(() => {
@@ -168,22 +247,72 @@ const Products: React.FC = () => {
                         <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={20} />
                     </div>
                 </div>
-                <div className="space-y-2">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-widest">ต้นทุนรวม (สำหรับอ้างอิง)</label>
-                    <div className="w-full px-6 py-4 border border-slate-200 rounded-2xl !bg-slate-50 font-black text-slate-600 text-xl flex items-center font-mono">
-                        ฿{calculateProductCost(currentProduct).toFixed(4)}
+                
+                {/* Cost & Price Section */}
+                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h4 className="font-black text-slate-700 flex items-center gap-2"><TrendingUp size={18}/> Pricing Strategy</h4>
+                        <div className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-100">
+                            BOM Cost: ฿{calculateProductCost(currentProduct).toFixed(2)}
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Margin (%)</label>
+                            <input type="number" value={currentProduct.profitMargin} onChange={e => setCurrentProduct({...currentProduct, profitMargin: parseFloat(e.target.value) || 0})} className={inputClasses + " text-center !py-3 !text-sm"} />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sale Price (฿)</label>
+                            <input type="number" step="0.01" value={currentProduct.salePrice} onChange={e => setCurrentProduct({...currentProduct, salePrice: parseFloat(e.target.value) || 0})} className={inputClasses + " !text-emerald-600 text-center font-mono !py-3 !text-sm"} />
+                        </div>
+                    </div>
+
+                    {/* AI Price Recommendation */}
+                    <div className="mt-4 border-t border-slate-200 pt-4">
+                        {!currentProduct.aiPriceRecommendation ? (
+                            <button 
+                                onClick={handleGenerateAiPrice} 
+                                disabled={isAiCalculating}
+                                className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 hover:shadow-xl transition-all disabled:opacity-70"
+                            >
+                                {isAiCalculating ? <Loader2 size={18} className="animate-spin"/> : <Sparkles size={18} />}
+                                {isAiCalculating ? "Analyzing Costs..." : "Ask AI Suggestion"}
+                            </button>
+                        ) : (
+                            <div className="bg-white rounded-xl border border-violet-100 shadow-sm p-4 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-violet-500"></div>
+                                <div className="flex justify-between items-start mb-2">
+                                    <h5 className="font-black text-violet-800 text-sm flex items-center gap-1"><Sparkles size={14}/> AI Insight</h5>
+                                    <button onClick={() => setCurrentProduct({...currentProduct, aiPriceRecommendation: undefined})} className="text-slate-300 hover:text-slate-500"><X size={14}/></button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mb-3">
+                                    <div>
+                                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Break-Even</span>
+                                        <span className="text-sm font-mono font-black text-slate-700">฿{currentProduct.aiPriceRecommendation.breakEvenPrice.toFixed(2)}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] text-violet-400 font-bold uppercase block">Recommended</span>
+                                        <span className="text-xl font-mono font-black text-violet-600">฿{currentProduct.aiPriceRecommendation.recommendedPrice.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                                <div className="bg-slate-50 p-2 rounded-lg mb-3">
+                                    <p className="text-[10px] text-slate-600 leading-relaxed italic">"{currentProduct.aiPriceRecommendation.justification}"</p>
+                                    <div className="flex justify-between mt-1 text-[9px] font-bold text-slate-400">
+                                        <span>Market Range: ฿{currentProduct.aiPriceRecommendation.marketMinPrice} - ฿{currentProduct.aiPriceRecommendation.marketMaxPrice}</span>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={applyRecommendedPrice}
+                                    className="w-full bg-violet-50 text-violet-700 py-2 rounded-lg text-xs font-black hover:bg-violet-100 transition-colors flex items-center justify-center gap-1"
+                                >
+                                    <Check size={14}/> Apply This Price
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
-                <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                        <label className="text-sm font-black text-slate-500 uppercase tracking-widest">กำไร (%)</label>
-                        <input type="number" value={currentProduct.profitMargin} onChange={e => setCurrentProduct({...currentProduct, profitMargin: parseFloat(e.target.value) || 0})} className={inputClasses + " text-center"} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-black text-slate-500 uppercase tracking-widest">ราคาขาย</label>
-                        <input type="number" step="0.01" value={currentProduct.salePrice} onChange={e => setCurrentProduct({...currentProduct, salePrice: parseFloat(e.target.value) || 0})} className={inputClasses + " !text-emerald-600 text-center font-mono"} />
-                    </div>
-                </div>
+
                 <div className="space-y-2">
                     <label className="text-sm font-black text-slate-500 uppercase tracking-widest">Cycle Time (วินาที)</label>
                     <input type="number" value={currentProduct.cycleTimeSeconds} onChange={e => setCurrentProduct({...currentProduct, cycleTimeSeconds: parseInt(e.target.value) || 0})} className={inputClasses} />

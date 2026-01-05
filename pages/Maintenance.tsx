@@ -3,26 +3,43 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
-    RefreshCcw, List, ChevronDown, User, Clock, 
-    PlusCircle, ChevronRight, AlertCircle, Play, 
-    CheckCircle2, Settings, History, X, Save,
-    ArrowUpRight
+    List, ChevronDown, User, Clock, 
+    PlusCircle, ChevronRight, Play, 
+    X, Save,
+    ArrowUpRight, Move, Edit3, Calendar, PauseCircle, CheckCircle2, Trash2, MonitorPlay
 } from 'lucide-react';
-import { Machine, MoldingLog, PackingOrder, Product } from '../types';
+import { Machine, MoldingLog, PackingOrder } from '../types';
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => {
   const data = useFactoryData();
-  const { factory_machines = [], molding_logs = [], packing_orders = [], factory_products = [] } = data;
+  const { 
+      factory_machines = [], 
+      molding_logs = [], 
+      packing_orders = [], 
+      factory_products = [],
+      packing_employees = [] 
+  } = data;
   const { updateData } = useFactoryActions();
   const { t } = useTranslation();
 
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('th-TH'));
+  
+  // UI State
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
+  // Modals
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
   const [activeLog, setActiveLog] = useState<MoldingLog | null>(null);
+  
+  // New Unified Management Modal State
+  const [manageJob, setManageJob] = useState<MoldingLog | null>(null);
+  const [targetMachineIdForTransfer, setTargetMachineIdForTransfer] = useState<string>('');
 
-  // For Log Modal Inputs
+  // Inputs for Quick Log
   const [logQty, setLogQty] = useState(0);
   const [rejectQty, setRejectQty] = useState(0);
 
@@ -33,30 +50,36 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+      if (manageJob) {
+          const currentM = factory_machines.find(m => m.name === manageJob.machine);
+          setTargetMachineIdForTransfer(currentM?.id || '');
+      }
+  }, [manageJob, factory_machines]);
+
   const waitingJobs = useMemo(() => 
     packing_orders.filter(o => o.status === 'Open' || o.status === 'In Progress')
   , [packing_orders]);
 
+  const idleMachines = useMemo(() => 
+    factory_machines.filter(m => m.status === 'ว่าง' || m.status === 'Idle')
+  , [factory_machines]);
+
   const getStatusColor = (status: string) => {
     switch(status) {
-        case 'ทำงาน': return { dot: 'bg-emerald-500', text: 'text-emerald-500' };
-        case 'เสีย': return { dot: 'bg-rose-500', text: 'text-rose-500' };
-        case 'เม็ดหมด': return { dot: 'bg-slate-400', text: 'text-slate-400' };
-        case 'ทดสอบงาน': return { dot: 'bg-blue-400', text: 'text-blue-400' };
-        default: return { dot: 'bg-amber-500', text: 'text-amber-500' };
+        case 'ทำงาน': return { dot: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-200', bg: 'bg-emerald-50' };
+        case 'เสีย': return { dot: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-200', bg: 'bg-rose-50' };
+        case 'เม็ดหมด': return { dot: 'bg-amber-500', text: 'text-amber-500', border: 'border-amber-200', bg: 'bg-amber-50' };
+        case 'ทดสอบงาน': return { dot: 'bg-blue-400', text: 'text-blue-400', border: 'border-blue-200', bg: 'bg-blue-50' };
+        default: return { dot: 'bg-slate-300', text: 'text-slate-400', border: 'border-slate-200', bg: 'bg-white' };
     }
   };
 
-  const handleStatusChange = async (machineId: string, newStatus: string) => {
-    const updatedMachines = factory_machines.map(m => 
-      m.id === machineId ? { ...m, status: newStatus } : m
-    );
-    await updateData({ ...data, factory_machines: updatedMachines });
-  };
+  // --- Actions ---
 
   const handleAssignJob = async (machine: Machine, order: PackingOrder) => {
     const newLog: MoldingLog = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: generateId(),
         jobId: `JOB-${order.lotNumber || 'TEMP'}-${Date.now().toString().slice(-4)}`,
         orderId: order.id,
         quantityRejected: 0,
@@ -70,7 +93,8 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
         machine: machine.name,
         quantityProduced: 0,
         targetQuantity: order.quantity,
-        startTime: new Date().toISOString()
+        startTime: new Date().toISOString(),
+        priority: 10
     };
 
     const updatedMachines = factory_machines.map(m => 
@@ -107,7 +131,6 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
         return l;
     });
 
-    // If finished, free the machine
     const logCheck = updatedLogs.find(l => l.id === activeLog.id);
     let updatedMachines = factory_machines;
     if (logCheck && logCheck.status === 'รอนับ') {
@@ -122,6 +145,63 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
     setRejectQty(0);
   };
 
+  // --- UNIFIED MANAGE JOB LOGIC ---
+
+  const handleSaveJobChanges = async () => {
+      if (!manageJob) return;
+
+      let updatedLogs = molding_logs.map(l => l.id === manageJob.id ? manageJob : l);
+      let updatedMachines = [...factory_machines];
+
+      // Handle Transfer Logic
+      const currentMachineObj = factory_machines.find(m => m.name === manageJob.machine);
+      if (targetMachineIdForTransfer && currentMachineObj && targetMachineIdForTransfer !== currentMachineObj.id) {
+          const targetMachine = factory_machines.find(m => m.id === targetMachineIdForTransfer);
+          if (targetMachine) {
+              // 1. Update Log Machine Name
+              updatedLogs = updatedLogs.map(l => l.id === manageJob.id ? { ...l, machine: targetMachine.name } : l);
+              // 2. Update Statuses
+              updatedMachines = updatedMachines.map(m => {
+                  if (m.id === currentMachineObj.id) return { ...m, status: 'ว่าง' };
+                  if (m.id === targetMachine.id) return { ...m, status: 'ทำงาน' };
+                  return m;
+              });
+          }
+      }
+
+      await updateData({ ...data, molding_logs: updatedLogs, factory_machines: updatedMachines });
+      setManageJob(null);
+  };
+
+  const handleJobAction = async (action: 'Pause' | 'Finish' | 'Remove') => {
+      if (!manageJob) return;
+      if (!confirm(`ยืนยันการทำรายการ: ${action}?`)) return;
+
+      let newStatus = manageJob.status;
+      let machineStatus = 'ทำงาน';
+
+      if (action === 'Pause') {
+          newStatus = 'Stopped';
+          machineStatus = 'ว่าง'; 
+      } else if (action === 'Finish') {
+          newStatus = 'รอนับ';
+          machineStatus = 'ว่าง';
+      } else if (action === 'Remove') {
+          // Delete Log
+          const updatedLogs = molding_logs.filter(l => l.id !== manageJob.id);
+          const updatedMachines = factory_machines.map(m => m.name === manageJob.machine ? { ...m, status: 'ว่าง' } : m);
+          await updateData({ ...data, molding_logs: updatedLogs, factory_machines: updatedMachines });
+          setManageJob(null);
+          return;
+      }
+
+      const updatedLogs = molding_logs.map(l => l.id === manageJob.id ? { ...l, status: newStatus } : l);
+      const updatedMachines = factory_machines.map(m => m.name === manageJob.machine ? { ...m, status: machineStatus } : m);
+
+      await updateData({ ...data, molding_logs: updatedLogs, factory_machines: updatedMachines });
+      setManageJob(null);
+  };
+
   const calculateTimeRemaining = (log: MoldingLog) => {
       const product = factory_products.find(p => p.name === log.productName);
       const cycleTime = product?.cycleTimeSeconds || 15;
@@ -131,11 +211,11 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
       const seconds = remaining * cycleTime;
       const h = Math.floor(seconds / 3600);
       const m = Math.floor((seconds % 3600) / 60);
-      return `${h}h ${m}m`;
+      return `${h} ชม. ${m} นาที`;
   };
 
   return (
-    <div className="flex h-full gap-6 overflow-hidden -m-8">
+    <div className="flex h-full gap-0 overflow-hidden -m-8 relative">
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="space-y-8">
@@ -146,36 +226,40 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">อัปเดตล่าสุด: {currentTime}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={() => window.location.reload()} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">
-                        <RefreshCcw size={16} /> รีเฟรช
-                    </button>
-                    <button className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all">
-                        <List size={16} /> รายการรอฉีด ({waitingJobs.length})
-                    </button>
+                    {!isSidebarOpen && (
+                        <button onClick={() => setIsSidebarOpen(true)} className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm">
+                            <List size={16} /> แสดงคิวงาน
+                        </button>
+                    )}
                 </div>
             </div>
 
             {/* Machine Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
                 {factory_machines.map((m) => {
                     const activeJob = molding_logs.find(l => l.machine === m.name && l.status === 'กำลังผลิต');
                     const statusStyle = getStatusColor(m.status);
                     const progress = activeJob ? Math.min((activeJob.quantityProduced / (activeJob.targetQuantity || 1)) * 100, 100) : 0;
 
                     return (
-                        <div key={m.id} className="bg-white rounded-[1.5rem] shadow-sm border border-slate-100 flex flex-col overflow-hidden group hover:shadow-md transition-shadow">
+                        <div key={m.id} className={`rounded-[1.5rem] shadow-sm border flex flex-col overflow-hidden transition-all relative ${activeJob ? 'bg-white border-slate-200' : 'bg-slate-50/50 border-dashed border-slate-300'}`}>
                             <div className="p-6 flex-1 space-y-6">
                                 <div className="flex justify-between items-start">
-                                    <h3 className="text-lg font-black text-slate-800">{m.name}</h3>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-3 h-3 rounded-full ${statusStyle.dot} animate-pulse`}></div>
+                                        <h3 className="text-lg font-black text-slate-800">{m.name}</h3>
+                                    </div>
                                     <div className="relative inline-block text-left group/status">
-                                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 cursor-pointer hover:bg-slate-100 transition-all">
-                                            <div className={`w-2 h-2 rounded-full ${statusStyle.dot}`}></div>
-                                            <span className={`text-[11px] font-black uppercase ${statusStyle.text}`}>{m.status}</span>
-                                            <ChevronDown size={12} className="text-slate-400" />
-                                        </div>
-                                        <div className="hidden group-hover/status:block absolute right-0 mt-1 w-32 bg-white border border-slate-100 rounded-xl shadow-xl z-10 py-2">
+                                        <button className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg cursor-pointer transition-all border ${statusStyle.bg} ${statusStyle.border}`}>
+                                            <span className={`text-[10px] font-black uppercase ${statusStyle.text}`}>{m.status}</span>
+                                            <ChevronDown size={12} className={statusStyle.text} />
+                                        </button>
+                                        <div className="hidden group-hover/status:block absolute right-0 mt-1 w-32 bg-white border border-slate-100 rounded-xl shadow-xl z-20 py-2">
                                             {['ทำงาน', 'ว่าง', 'เสีย', 'เม็ดหมด', 'ทดสอบงาน'].map(s => (
-                                                <button key={s} onClick={() => handleStatusChange(m.id, s)} className="w-full text-left px-4 py-2 text-[10px] font-black uppercase hover:bg-slate-50 text-slate-600">
+                                                <button key={s} onClick={() => {
+                                                    const updated = factory_machines.map(mac => mac.id === m.id ? { ...mac, status: s } : mac);
+                                                    updateData({ ...data, factory_machines: updated });
+                                                }} className="w-full text-left px-4 py-2 text-[10px] font-black uppercase hover:bg-slate-50 text-slate-600">
                                                     {s}
                                                 </button>
                                             ))}
@@ -184,19 +268,24 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                                 </div>
 
                                 {activeJob ? (
-                                    <div className="space-y-4">
+                                    <div className="space-y-4 cursor-pointer" onClick={() => setManageJob(activeJob)}>
                                         <div className="space-y-1">
-                                            <div className="text-[10px] font-bold text-slate-400 uppercase">งานปัจจุบัน</div>
-                                            <div className="text-sm font-black text-blue-600 line-clamp-1">{activeJob.productName}</div>
+                                            <div className="flex justify-between items-center">
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase">กำลังผลิต</div>
+                                                <div className="flex gap-1">
+                                                    <button onClick={(e) => {e.stopPropagation(); setManageJob(activeJob);}} className="p-1 text-slate-400 hover:text-blue-600 rounded bg-slate-50"><Edit3 size={14}/></button>
+                                                </div>
+                                            </div>
+                                            <div className="text-sm font-black text-slate-800 line-clamp-1">{activeJob.productName}</div>
                                             <div className="flex items-center gap-1 text-[10px] font-mono text-slate-400">
-                                                <span>Lot:</span>
-                                                <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{activeJob.lotNumber}</span>
+                                                <span>LOT:</span>
+                                                <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">{activeJob.lotNumber}</span>
                                             </div>
                                         </div>
 
                                         <div className="space-y-1.5">
                                             <div className="flex justify-between items-end text-[11px] font-black">
-                                                <span className="text-slate-800">{activeJob.quantityProduced.toLocaleString()} / {(activeJob.targetQuantity || 0).toLocaleString()}</span>
+                                                <span className="text-slate-600">{activeJob.quantityProduced.toLocaleString()} / {(activeJob.targetQuantity || 0).toLocaleString()}</span>
                                                 <span className="text-blue-600">{progress.toFixed(1)}%</span>
                                             </div>
                                             <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -204,7 +293,7 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-50">
                                             <div className="flex items-center gap-2 text-[11px] text-slate-400 font-bold">
                                                 <User size={14} /> <span className="text-slate-600 truncate">{activeJob.operatorName}</span>
                                             </div>
@@ -214,9 +303,9 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="h-32 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-2xl text-center space-y-2">
-                                        <p className="text-slate-300 font-black italic text-xs uppercase tracking-widest">No Active Job</p>
-                                        <p className="text-[10px] text-slate-400 font-bold">พร้อมรับงานใหม่</p>
+                                    <div className="h-32 flex flex-col items-center justify-center text-center space-y-2 opacity-50">
+                                        <MonitorPlay size={40} className="text-slate-300"/>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ready for Job</p>
                                     </div>
                                 )}
                             </div>
@@ -227,19 +316,16 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
                                         onClick={() => { setActiveLog(activeJob); setShowLogModal(true); }}
                                         className="w-full bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm shadow-md shadow-emerald-100 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
                                     >
-                                        <PlusCircle size={16} /> บันทึกผลผลิต
+                                        <PlusCircle size={16} /> บันทึกยอดผลิต
                                     </button>
                                 ) : (
                                     <button 
                                         onClick={() => { setSelectedMachine(m); setShowAssignModal(true); }}
                                         className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-bold text-sm shadow-md shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
                                     >
-                                        <Play size={16} /> เริ่มงาน
+                                        <Play size={16} /> ป้อนงานเข้าเครื่อง
                                     </button>
                                 )}
-                                <button className="w-full py-2 bg-white border border-slate-200 text-slate-500 text-[11px] font-bold rounded-lg hover:bg-slate-50 flex items-center justify-center gap-1.5 transition-colors">
-                                    <Settings size={14} /> ดูคิวทั้งหมด
-                                </button>
                             </div>
                         </div>
                     );
@@ -248,35 +334,206 @@ const Maintenance: React.FC<{ view: 'status' | 'maintenance' }> = ({ view }) => 
         </div>
       </div>
 
-      {/* Right Sidebar: Waiting Queue */}
-      <div className="w-[380px] bg-white border-l border-slate-200 flex flex-col shrink-0">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
-            <h3 className="text-lg font-black text-slate-800">รายการรอฉีด ({waitingJobs.length})</h3>
-            <ChevronRight size={20} className="text-slate-300" />
+      {/* Collapsible Right Sidebar: Waiting Queue */}
+      <div 
+        className={`bg-white border-l border-slate-200 flex flex-col shrink-0 transition-all duration-300 ease-in-out z-20 absolute right-0 top-0 bottom-0 h-full shadow-xl
+        ${isSidebarOpen ? 'translate-x-0 w-[380px]' : 'translate-x-full w-0 opacity-0 pointer-events-none'}`}
+      >
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="text-lg font-black text-slate-800">คิวรอฉีด ({waitingJobs.length})</h3>
+            <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors">
+                <ChevronRight size={20} />
+            </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-slate-50/30">
             {waitingJobs.map((job) => (
                 <div key={job.id} onClick={() => { 
+                    if (!isSidebarOpen) return;
                     const idleMachine = factory_machines.find(m => m.status === 'ว่าง');
                     if(idleMachine) handleAssignJob(idleMachine, job);
                     else alert("ไม่มีเครื่องจักรว่าง กรุณาเลือกเครื่องจักรด้วยตนเอง");
-                }} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:border-blue-200 transition-all cursor-pointer group">
+                }} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div>
                     <div className="flex justify-between items-start mb-3">
                         <h4 className="font-black text-slate-800 text-sm leading-tight group-hover:text-blue-600 transition-colors">{job.name}</h4>
-                        <span className="text-slate-300 group-hover:text-blue-300 transition-colors"><ChevronRight size={16}/></span>
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] font-mono mb-2">
-                        <span className="text-slate-400 uppercase">Lot:</span>
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-bold">{job.lotNumber}</span>
+                    <div className="flex items-center gap-2 text-[11px] font-mono mb-3">
+                        <span className="bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold border border-slate-200">LOT: {job.lotNumber}</span>
+                        <span className="bg-rose-50 text-rose-600 px-2 py-1 rounded font-bold border border-rose-100">{job.quantity.toLocaleString()} Pcs</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-rose-600 font-black text-xs">รอฉีด: {job.quantity.toLocaleString()} ชิ้น</span>
-                        <span className="text-slate-400 text-[10px] font-bold italic">{job.dueDate}</span>
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                        <span className="text-slate-400 text-[10px] font-bold">Due: {job.dueDate}</span>
+                        <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold">Assign <ArrowUpRight size={12}/></span>
                     </div>
                 </div>
             ))}
+            {waitingJobs.length === 0 && (
+                <div className="text-center py-20 text-slate-400">
+                    <List size={40} className="mx-auto mb-2 opacity-20"/>
+                    <p className="text-sm font-bold">ไม่มีงานรอในคิว</p>
+                </div>
+            )}
         </div>
       </div>
+
+      {/* --- UNIFIED MANAGE JOB MODAL (THE NEW FEATURE) --- */}
+      {manageJob && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                  {/* Header */}
+                  <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">จัดการงานสำหรับ {manageJob.machine}</h3>
+                      <button onClick={() => setManageJob(null)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={24}/></button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8 bg-white">
+                      {/* Product & Progress Header */}
+                      <div>
+                          <h4 className="text-xl font-black text-blue-600 mb-3">{manageJob.productName}</h4>
+                          <div className="flex justify-between items-end text-sm font-bold text-slate-600 mb-2">
+                              <span className="font-mono">{manageJob.quantityProduced.toLocaleString()} / {(manageJob.targetQuantity || 0).toLocaleString()}</span>
+                              <span className="text-blue-600">{((manageJob.quantityProduced / (manageJob.targetQuantity || 1)) * 100).toFixed(1)}%</span>
+                          </div>
+                          <div className="h-4 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                              <div className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out" style={{ width: `${Math.min(((manageJob.quantityProduced / (manageJob.targetQuantity || 1)) * 100), 100)}%` }}></div>
+                          </div>
+                      </div>
+
+                      {/* Main Form Grid */}
+                      <div className="space-y-5">
+                          {/* Operator */}
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">ผู้ควบคุมเครื่อง</label>
+                              <div className="relative">
+                                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <select 
+                                    value={manageJob.operatorName} 
+                                    onChange={(e) => setManageJob({...manageJob, operatorName: e.target.value})}
+                                    className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none"
+                                >
+                                    <option value="">---ว่าง---</option>
+                                    {packing_employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                                </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
+                              </div>
+                          </div>
+
+                          {/* Quantities Row */}
+                          <div className="grid grid-cols-2 gap-6">
+                              <div>
+                                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">จำนวนเป้าหมาย (ชิ้น)</label>
+                                  <input 
+                                    type="number" 
+                                    value={manageJob.targetQuantity} 
+                                    onChange={(e) => setManageJob({...manageJob, targetQuantity: parseInt(e.target.value) || 0})}
+                                    className="w-full px-4 py-3 border border-slate-300 rounded-xl font-black text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                  />
+                              </div>
+                              <div>
+                                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">จำนวนที่ผลิตแล้ว</label>
+                                  <input 
+                                    type="number" 
+                                    value={manageJob.quantityProduced} 
+                                    onChange={(e) => setManageJob({...manageJob, quantityProduced: parseInt(e.target.value) || 0})}
+                                    className="w-full px-4 py-3 border border-slate-300 rounded-xl font-black text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
+                                  />
+                              </div>
+                          </div>
+
+                          {/* Lot Number */}
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Lot Number</label>
+                              <input 
+                                type="text" 
+                                value={manageJob.lotNumber} 
+                                onChange={(e) => setManageJob({...manageJob, lotNumber: e.target.value})}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                          </div>
+
+                          {/* Time */}
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">เวลาเริ่มเดินเครื่อง</label>
+                              <div className="relative">
+                                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                  <input 
+                                    type="datetime-local" 
+                                    value={manageJob.startTime ? new Date(manageJob.startTime).toISOString().slice(0, 16) : ''}
+                                    onChange={(e) => setManageJob({...manageJob, startTime: new Date(e.target.value).toISOString()})}
+                                    className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                  />
+                              </div>
+                          </div>
+
+                          {/* Priority */}
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">ลำดับความสำคัญ (Priority)</label>
+                              <input 
+                                type="number" 
+                                value={manageJob.priority || 10} 
+                                onChange={(e) => setManageJob({...manageJob, priority: parseInt(e.target.value)})}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">ค่ายิ่งน้อยยิ่งสำคัญมาก</p>
+                          </div>
+
+                          {/* Transfer Section */}
+                          <div className="pt-4 border-t border-slate-100">
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">ย้ายไปเครื่องจักรอื่น</label>
+                              <div className="relative">
+                                  <Move className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                  <select 
+                                    value={targetMachineIdForTransfer}
+                                    onChange={(e) => setTargetMachineIdForTransfer(e.target.value)}
+                                    className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none"
+                                  >
+                                      {/* Current Machine Option */}
+                                      {factory_machines.find(m => m.name === manageJob.machine) && (
+                                          <option value={factory_machines.find(m => m.name === manageJob.machine)?.id}>
+                                              {manageJob.machine} (เครื่องปัจจุบัน)
+                                          </option>
+                                      )}
+                                      {/* Idle Machines */}
+                                      {idleMachines.map(m => (
+                                          <option key={m.id} value={m.id}>{m.name} (ว่าง)</option>
+                                      ))}
+                                  </select>
+                                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
+                              </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Actions</label>
+                              <div className="flex flex-wrap gap-3">
+                                  <button onClick={() => handleJobAction('Pause')} className="flex-1 min-w-[120px] bg-amber-400 text-amber-900 py-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 hover:bg-amber-500 transition-colors shadow-sm">
+                                      <PauseCircle size={18}/> พักงาน (หยุดชั่วคราว)
+                                  </button>
+                                  <button onClick={() => handleJobAction('Finish')} className="flex-1 min-w-[120px] bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors shadow-sm">
+                                      <CheckCircle2 size={18}/> จบงานนี้
+                                  </button>
+                                  <button onClick={() => handleJobAction('Remove')} className="flex-1 min-w-[120px] bg-rose-500 text-white py-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 hover:bg-rose-600 transition-colors shadow-sm">
+                                      <Trash2 size={18}/> ลบออกจากคิว
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                      <button onClick={() => setManageJob(null)} className="px-8 py-3.5 border border-slate-300 rounded-xl font-bold text-slate-500 hover:bg-white transition-all text-sm">
+                          ยกเลิก
+                      </button>
+                      <button onClick={handleSaveJobChanges} className="px-10 py-3.5 bg-blue-600 text-white rounded-xl font-black shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all text-sm active:scale-95">
+                          บันทึกการเปลี่ยนแปลง
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- MODALS --- */}
 
       {/* Log Production Modal */}
       {showLogModal && activeLog && (

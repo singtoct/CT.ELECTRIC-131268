@@ -6,10 +6,12 @@ import {
     Save, Plus, Trash2, Upload, Download, Loader2, Check, 
     AlertTriangle, RefreshCcw, Database, Settings as SettingsIcon,
     FileText, Box, Activity, AlertOctagon, CheckSquare, Square,
-    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles, X
+    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles, X, Factory
 } from 'lucide-react';
-import { FactoryData, FactorySettings, CostItem } from '../types';
+import { FactoryData, FactorySettings, CostItem, Machine } from '../types';
 import { sanitizeData } from '../services/firebase';
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // Helper Component for Simple Lists (Strings)
 const StringListEditor = ({ 
@@ -70,6 +72,87 @@ const StringListEditor = ({
                         className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-full transition-colors flex-shrink-0"
                     >
                         <Plus size={18} />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Machine List Editor Component
+const MachineListEditor = ({ 
+    machines = [], 
+    onUpdate 
+}: { 
+    machines: Machine[]; 
+    onUpdate: (machines: Machine[]) => void; 
+}) => {
+    const [newName, setNewName] = useState('');
+    const [newLocation, setNewLocation] = useState('');
+
+    const handleAdd = () => {
+        if (!newName.trim()) return;
+        const newMachine: Machine = {
+            id: generateId(),
+            name: newName,
+            location: newLocation || 'Factory Floor',
+            status: 'ว่าง',
+            workingHoursPerDay: 18 // Default
+        };
+        onUpdate([...machines, newMachine]);
+        setNewName('');
+        setNewLocation('');
+    };
+
+    const handleDelete = (id: string) => {
+        if(!confirm("ยืนยันลบเครื่องจักร?")) return;
+        onUpdate(machines.filter(m => m.id !== id));
+    };
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+             <div className="px-6 py-4 border-b border-slate-100 bg-white flex justify-between items-center">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2"><Cpu size={18} className="text-blue-500"/> จัดการเครื่องจักร (Machine Management)</h3>
+            </div>
+            <div className="p-4 space-y-3">
+                {machines.map((m) => (
+                    <div key={m.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                             M
+                         </div>
+                         <div className="flex-1">
+                             <div className="font-bold text-slate-800 text-sm">{m.name}</div>
+                             <div className="text-[10px] text-slate-500">{m.location}</div>
+                         </div>
+                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${m.status === 'ว่าง' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{m.status}</span>
+                         <button onClick={() => handleDelete(m.id)} className="text-slate-300 hover:text-red-500 px-1">
+                            <Trash2 size={16} />
+                        </button>
+                    </div>
+                ))}
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-2">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">เพิ่มเครื่องจักรใหม่</p>
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder="ชื่อเครื่อง (เช่น เครื่องฉีด 1)"
+                        className="flex-[2] text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-bold"
+                    />
+                    <input 
+                        type="text" 
+                        value={newLocation}
+                        onChange={(e) => setNewLocation(e.target.value)}
+                        placeholder="โซน/ตำแหน่ง"
+                        className="flex-1 text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900"
+                    />
+                    <button 
+                        onClick={handleAdd}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg transition-colors font-bold text-sm"
+                    >
+                        เพิ่ม
                     </button>
                 </div>
             </div>
@@ -213,6 +296,11 @@ const Settings: React.FC = () => {
         } catch (e) {
             console.error(e);
         }
+    };
+
+    // Special handler to update machines immediately
+    const handleUpdateMachines = async (machines: Machine[]) => {
+        await updateData({ ...allData, factory_machines: machines });
     };
 
     const updateCompany = (field: keyof typeof settings.companyInfo, value: string) => {
@@ -385,6 +473,12 @@ const Settings: React.FC = () => {
                              </div>
                         </div>
 
+                        {/* Machine Management (New) */}
+                        <MachineListEditor 
+                            machines={allData.factory_machines} 
+                            onUpdate={handleUpdateMachines} 
+                        />
+
                         {/* AI Key Section */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
                              <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
@@ -414,7 +508,10 @@ const Settings: React.FC = () => {
                                 </div>
                              </div>
                         </div>
+                    </div>
 
+                    {/* Right Column */}
+                    <div className="space-y-8">
                         <CostListEditor title={t('set.overhead')} subtext="ค่าใช้จ่ายแฝง (Indirect Costs)" items={settings.overheadCosts} onUpdate={(items) => setSettings(prev => ({...prev, overheadCosts: items}))} t={t} />
                         <CostListEditor title={t('set.depreciation')} subtext="ค่าเสื่อมราคาเครื่องจักร" items={settings.machineDepreciation} onUpdate={(items) => setSettings(prev => ({...prev, machineDepreciation: items}))} t={t} />
                         
@@ -431,14 +528,10 @@ const Settings: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Right Column */}
-                    <div className="space-y-8">
                         <StringListEditor title={t('set.qcReasons')} items={settings.qcRejectReasons} onUpdate={(items) => setSettings(prev => ({...prev, qcRejectReasons: items}))} placeholder={t('set.newItemPlaceholder')} />
                         <StringListEditor title={t('set.prodSteps')} items={settings.productionSteps} onUpdate={(items) => setSettings(prev => ({...prev, productionSteps: items}))} placeholder={t('set.newItemPlaceholder')} />
                         <StringListEditor title={t('set.machineStatus')} items={settings.machineStatuses} onUpdate={(items) => setSettings(prev => ({...prev, machineStatuses: items}))} placeholder={t('set.newItemPlaceholder')} />
-                        <StringListEditor title={t('set.roles')} items={settings.departments} onUpdate={(items) => setSettings(prev => ({...prev, departments: items}))} placeholder={t('set.newItemPlaceholder')} />
                         
                         <div className="md:hidden">
                             <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-4 rounded-xl font-bold shadow-md transition-all">

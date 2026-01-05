@@ -2,16 +2,16 @@
 import React, { useState, useMemo } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
-import { Cpu, Clock, Calendar, FileText, BarChart3, AlertCircle, CheckCircle2, Plus, Filter, Edit2, Trash2, X, Save, Search } from 'lucide-react';
-import { MoldingLog } from '../types';
+import { Cpu, Clock, Calendar, FileText, BarChart3, AlertCircle, CheckCircle2, Plus, Filter, Edit2, Trash2, X, Save, Search, Factory } from 'lucide-react';
+import { MoldingLog, ProductionDocument } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
 
 // Helper for generating ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const Production: React.FC = () => {
-  const factoryData = useFactoryData(); // Grab full object once
-  const { factory_machines, molding_logs, packing_orders } = factoryData;
+  const factoryData = useFactoryData();
+  const { factory_machines, molding_logs, production_documents = [], packing_orders } = factoryData;
   const { updateData } = useFactoryActions(); 
   const { t } = useTranslation();
   
@@ -25,47 +25,64 @@ const Production: React.FC = () => {
 
   // Pre-calculate options
   const machineOptions = useMemo(() => factory_machines.map(m => ({ value: m.name, label: `${m.name} (${m.location})` })), [factory_machines]);
-  const orderOptions = useMemo(() => packing_orders.filter(o => o.status !== 'Cancelled').map(o => ({ value: o.id, label: `${o.lotNumber || 'No Lot'} - ${o.name}`, subLabel: `Remaining: ${(o.quantity || 0) - (o.quantityDelivered || 0)}` })), [packing_orders]);
+  
+  // Combine Documents for Selection (Prioritize Internal Docs)
+  const orderOptions = useMemo(() => {
+      const internalDocs = production_documents
+          .filter(d => d.status === 'Approved' || d.status === 'In Progress' || d.status === 'Material Checking')
+          .flatMap(d => d.items.map(item => ({
+              value: d.id, 
+              label: `${d.docNumber} - ${item.productName}`, 
+              subLabel: `Target: ${item.quantity} ${item.unit}`,
+              type: 'internal',
+              doc: d,
+              item: item
+          })));
+      
+      return internalDocs;
+  }, [production_documents]);
 
-  // --- Logic 1: Overall Active PO Progress ---
-  const activeOrdersProgress = useMemo(() => {
-    // Get all orders (we might want to see completed ones too depending on filter)
-    const allOrders = packing_orders || [];
+  // --- Logic 1: Overall Active Production Progress (Based on Production Documents) ---
+  const activeJobsProgress = useMemo(() => {
+    // Flatten Production Documents into trackable jobs
+    const jobs = production_documents.flatMap(doc => {
+        return doc.items.map(item => {
+            const relevantLogs = molding_logs?.filter(log => log.orderId === doc.id && log.productName === item.productName) || [];
+            const totalProduced = relevantLogs.reduce((sum, log) => sum + (log.quantityProduced || 0), 0);
+            const progress = item.quantity > 0 ? (totalProduced / item.quantity) * 100 : 0;
+            
+            let healthStatus = 'In Progress';
+            if (progress >= 100) healthStatus = 'Completed';
+            else if (progress === 0) healthStatus = 'Not Started';
+            else if (progress >= 90) healthStatus = 'Near Completion';
 
-    const processed = allOrders.map(order => {
-        const relevantLogs = molding_logs?.filter(log => 
-            (log.orderId === order.id) || 
-            (order.lotNumber && log.lotNumber === order.lotNumber)
-        ) || [];
+            // Override if Doc is cancelled or draft
+            if (doc.status === 'Draft') healthStatus = 'Draft';
 
-        const totalProduced = relevantLogs.reduce((sum, log) => sum + (log.quantityProduced || 0), 0);
-        const quantity = order.quantity || 0;
-        const progress = quantity > 0 ? (totalProduced / quantity) * 100 : 0;
-        const remaining = Math.max(0, quantity - totalProduced);
-
-        let healthStatus = 'In Progress';
-        if (progress >= 100 || order.status === 'Completed') healthStatus = 'Completed';
-        else if (progress === 0) healthStatus = 'Not Started';
-        else if (progress >= 90) healthStatus = 'Near Completion';
-
-        return {
-            ...order,
-            totalProduced,
-            remaining,
-            progress,
-            healthStatus,
-            lastLogDate: relevantLogs.length > 0 ? relevantLogs[relevantLogs.length - 1].date : '-'
-        };
+            return {
+                id: `${doc.id}_${item.id}`,
+                docId: doc.id,
+                docNumber: doc.docNumber,
+                productName: item.productName,
+                target: item.quantity,
+                dueDate: item.dueDate,
+                customer: doc.customerName,
+                totalProduced,
+                progress,
+                healthStatus,
+                status: doc.status
+            };
+        });
     });
 
     // Filter Logic
-    if (summaryFilter === 'all') return processed;
-    if (summaryFilter === 'completed') return processed.filter(o => o.healthStatus === 'Completed');
-    if (summaryFilter === 'not_started') return processed.filter(o => o.healthStatus === 'Not Started');
-    if (summaryFilter === 'in_progress') return processed.filter(o => o.healthStatus === 'In Progress' || o.healthStatus === 'Near Completion');
+    if (summaryFilter === 'all') return jobs;
+    if (summaryFilter === 'completed') return jobs.filter(j => j.healthStatus === 'Completed');
+    if (summaryFilter === 'not_started') return jobs.filter(j => j.healthStatus === 'Not Started');
+    if (summaryFilter === 'in_progress') return jobs.filter(j => j.healthStatus === 'In Progress' || j.healthStatus === 'Near Completion');
     
-    return processed;
-  }, [packing_orders, molding_logs, summaryFilter]);
+    return jobs;
+  }, [production_documents, molding_logs, summaryFilter]);
 
 
   // --- Logic 2: Daily Report (Specific Date) ---
@@ -75,18 +92,18 @@ const Production: React.FC = () => {
 
   // --- Actions ---
 
-  const handleOpenAddModal = (prefillOrder?: any) => {
+  const handleOpenAddModal = (prefillJob?: any) => {
     setEditingLog({
         id: '',
         date: selectedDate,
         machine: factory_machines?.[0]?.name || '',
-        shift: 'เช้า', // Default shift
+        shift: 'เช้า',
         quantityProduced: 0,
         quantityRejected: 0,
         status: 'In Progress',
-        lotNumber: prefillOrder?.lotNumber || '',
-        productName: prefillOrder?.name || '',
-        orderId: prefillOrder?.id || '',
+        lotNumber: prefillJob ? prefillJob.docNumber : '',
+        productName: prefillJob ? prefillJob.productName : '',
+        orderId: prefillJob ? prefillJob.docId : '',
         jobId: generateId(),
         operatorName: ''
     });
@@ -100,14 +117,8 @@ const Production: React.FC = () => {
 
   const handleDeleteLog = async (id: string) => {
       if (!window.confirm("Are you sure you want to delete this log?")) return;
-      
       const updatedLogs = molding_logs.filter(l => l.id !== id);
-      // Construct full data object using captured factoryData
-      const newData = {
-          ...factoryData,
-          molding_logs: updatedLogs,
-      };
-      await updateData(newData);
+      await updateData({ ...factoryData, molding_logs: updatedLogs });
   };
 
   const handleSaveLog = async () => {
@@ -116,36 +127,29 @@ const Production: React.FC = () => {
       let updatedLogs = [...(molding_logs || [])];
       
       if (editingLog.id) {
-          // Update existing
           updatedLogs = updatedLogs.map(l => l.id === editingLog.id ? editingLog as MoldingLog : l);
       } else {
-          // Create new
           const newLog = { ...editingLog, id: generateId() } as MoldingLog;
           updatedLogs.push(newLog);
       }
 
-      const newData = {
-          ...factoryData,
-          molding_logs: updatedLogs,
-      };
-
-      await updateData(newData);
+      await updateData({ ...factoryData, molding_logs: updatedLogs });
       setIsModalOpen(false);
   };
 
   const handleOrderSelectChange = (val: any) => {
-      const orderId = val;
-      const order = packing_orders.find(o => o.id === orderId);
-      if (order) {
+      // Find selected option
+      const opt = orderOptions.find(o => o.value === val);
+      if (opt && opt.doc && opt.item) {
           setEditingLog(prev => ({
               ...prev,
-              orderId: order.id,
-              lotNumber: order.lotNumber,
-              productName: order.name
+              orderId: opt.doc.id,
+              lotNumber: opt.doc.docNumber,
+              productName: opt.item.productName,
+              targetQuantity: opt.item.quantity // Bring target for reference
           }));
       }
   };
-
 
   return (
     <div className="space-y-8 relative">
@@ -161,21 +165,21 @@ const Production: React.FC = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className="bg-purple-100 text-purple-600 p-2 rounded-lg">
-                        <BarChart3 size={24} />
+                        <Factory size={24} />
                     </div>
                     <div>
-                        <h3 className="text-lg font-bold text-slate-800">{t('prod.activeSummary')}</h3>
-                        <p className="text-sm text-slate-500">Overview of order progress</p>
+                        <h3 className="text-lg font-bold text-slate-800">Active Jobs (แผนการผลิตปัจจุบัน)</h3>
+                        <p className="text-sm text-slate-500">ติดตามความคืบหน้าจากใบสั่งผลิต (PO Documents)</p>
                     </div>
                 </div>
 
                 {/* Filter Tabs */}
                 <div className="flex bg-slate-200/50 p-1 rounded-lg">
                     {[
-                        { key: 'all', label: 'All' },
-                        { key: 'in_progress', label: 'In Progress' },
-                        { key: 'not_started', label: 'Not Started' },
-                        { key: 'completed', label: 'Completed' }
+                        { key: 'all', label: 'ทั้งหมด' },
+                        { key: 'in_progress', label: 'กำลังผลิต' },
+                        { key: 'not_started', label: 'ยังไม่เริ่ม' },
+                        { key: 'completed', label: 'เสร็จสิ้น' }
                     ].map(tab => (
                         <button
                             key={tab.key}
@@ -206,50 +210,54 @@ const Production: React.FC = () => {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                    {activeOrdersProgress.map((order) => (
-                        <tr key={order.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 font-mono font-bold text-slate-700">{order.lotNumber || '-'}</td>
+                    {activeJobsProgress.map((job) => (
+                        <tr key={job.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4">
-                                <div className="font-medium text-slate-900">{order.name}</div>
-                                <div className="text-xs text-slate-500">Due: {order.dueDate}</div>
+                                <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">{job.docNumber}</span>
+                                {job.customer && <div className="text-[10px] text-slate-400 mt-1">{job.customer}</div>}
                             </td>
                             <td className="px-6 py-4">
-                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border
-                                    ${order.healthStatus === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : 
-                                      order.healthStatus === 'Near Completion' ? 'bg-blue-50 text-blue-700 border-blue-200' : 
-                                      order.healthStatus === 'Not Started' ? 'bg-slate-100 text-slate-600 border-slate-200' : 
+                                <div className="font-bold text-slate-900">{job.productName}</div>
+                                <div className="text-xs text-slate-500 flex items-center gap-1"><Clock size={10}/> Due: {job.dueDate}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border uppercase
+                                    ${job.healthStatus === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : 
+                                      job.healthStatus === 'Near Completion' ? 'bg-blue-50 text-blue-700 border-blue-200' : 
+                                      job.healthStatus === 'Not Started' ? 'bg-slate-100 text-slate-600 border-slate-200' : 
                                       'bg-white text-slate-700 border-slate-300'}`}>
-                                    {order.healthStatus}
+                                    {job.healthStatus === 'In Progress' && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></div>}
+                                    {job.healthStatus}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 text-right text-slate-500">{order.quantity.toLocaleString()}</td>
-                            <td className="px-6 py-4 text-right font-bold text-green-600">{order.totalProduced.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-right font-mono text-slate-500">{job.target.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-right font-mono font-bold text-green-600">{job.totalProduced.toLocaleString()}</td>
                             <td className="px-6 py-4">
                                 <div className="flex flex-col gap-1">
                                     <div className="flex justify-between text-xs mb-1">
-                                        <span className="font-medium text-slate-700">{(order.progress || 0).toFixed(1)}%</span>
+                                        <span className="font-bold text-slate-700">{(job.progress || 0).toFixed(1)}%</span>
                                     </div>
-                                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-100">
+                                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-100">
                                         <div 
-                                            className={`h-full rounded-full ${order.progress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                                            style={{ width: `${Math.min(order.progress || 0, 100)}%` }}
+                                            className={`h-full rounded-full shadow-sm ${job.progress >= 100 ? 'bg-green-500' : 'bg-gradient-to-r from-blue-400 to-indigo-500'}`}
+                                            style={{ width: `${Math.min(job.progress || 0, 100)}%` }}
                                         ></div>
                                     </div>
                                 </div>
                             </td>
                             <td className="px-6 py-4 text-center">
                                 <button 
-                                    onClick={() => handleOpenAddModal(order)}
-                                    className="p-2 bg-primary-50 text-primary-600 hover:bg-primary-100 rounded-lg transition-colors flex items-center gap-1 mx-auto text-xs font-bold"
-                                    title="Add Production Log for this Order"
+                                    onClick={() => handleOpenAddModal(job)}
+                                    className="px-3 py-1.5 bg-slate-800 text-white hover:bg-slate-900 rounded-lg transition-all flex items-center gap-1 mx-auto text-xs font-bold shadow-md hover:shadow-lg active:scale-95"
+                                    title="Add Production Log for this Job"
                                 >
-                                    <Plus size={14} /> Log
+                                    <Plus size={14} /> บันทึกผลิต
                                 </button>
                             </td>
                         </tr>
                     ))}
-                    {activeOrdersProgress.length === 0 && (
-                        <tr><td colSpan={7} className="text-center py-8 text-slate-500">No orders found for this filter.</td></tr>
+                    {activeJobsProgress.length === 0 && (
+                        <tr><td colSpan={7} className="text-center py-12 text-slate-400 font-bold">ไม่พบรายการผลิตที่กำลังดำเนินการ</td></tr>
                     )}
                 </tbody>
             </table>
@@ -276,14 +284,14 @@ const Production: React.FC = () => {
                         type="date" 
                         value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="bg-transparent border-none text-sm font-medium text-slate-700 focus:ring-0"
+                        className="bg-transparent border-none text-sm font-bold text-slate-700 focus:ring-0"
                     />
                 </div>
                 <button 
                     onClick={() => handleOpenAddModal()}
-                    className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm"
+                    className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-primary-700 transition-colors shadow-sm"
                 >
-                    <Plus size={16} /> Add Log
+                    <Plus size={16} /> เพิ่มบันทึกทั่วไป
                 </button>
             </div>
         </div>
@@ -304,17 +312,17 @@ const Production: React.FC = () => {
                     {dailyLogs.length > 0 ? (
                         dailyLogs.map((log) => (
                             <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="px-6 py-4 font-medium text-slate-900">{log.machine}</td>
+                                <td className="px-6 py-4 font-bold text-slate-900">{log.machine}</td>
                                 <td className="px-6 py-4 text-slate-600">{log.shift}</td>
                                 <td className="px-6 py-4">
-                                    <div className="text-slate-900 font-medium line-clamp-1">{log.productName}</div>
-                                    <div className="text-xs text-slate-500 font-mono">{log.lotNumber}</div>
+                                    <div className="text-slate-900 font-bold line-clamp-1">{log.productName}</div>
+                                    <div className="text-xs text-slate-500 font-mono bg-slate-100 inline-block px-1 rounded">{log.lotNumber}</div>
                                 </td>
-                                <td className="px-6 py-4 text-right font-bold text-blue-600 bg-blue-50/30">
+                                <td className="px-6 py-4 text-right font-black text-blue-600 bg-blue-50/30 font-mono text-base">
                                     {(log.quantityProduced || 0).toLocaleString()}
                                 </td>
                                 <td className="px-6 py-4">
-                                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium 
+                                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase 
                                         ${log.status === 'Completed' || log.status === 'เสร็จสิ้น' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
                                         {log.status}
                                      </span>
@@ -323,13 +331,13 @@ const Production: React.FC = () => {
                                    <div className="flex items-center justify-center gap-2">
                                         <button 
                                             onClick={() => handleEditLog(log)}
-                                            className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                                            className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                                         >
                                             <Edit2 size={16} />
                                         </button>
                                         <button 
                                             onClick={() => handleDeleteLog(log.id)}
-                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                         >
                                             <Trash2 size={16} />
                                         </button>
@@ -343,7 +351,7 @@ const Production: React.FC = () => {
                                 <div className="flex flex-col items-center justify-center gap-2">
                                     <FileText size={32} className="text-slate-300" />
                                     <p>{t('prod.noLogs')}</p>
-                                    <p className="text-xs">Click "Add Log" to insert new data for {selectedDate}</p>
+                                    <p className="text-xs opacity-70">กด "เพิ่มบันทึก" เพื่อลงยอดผลิตของวันที่ {selectedDate}</p>
                                 </div>
                             </td>
                         </tr>
@@ -355,35 +363,56 @@ const Production: React.FC = () => {
 
       {/* --- ADD/EDIT MODAL --- */}
       {isModalOpen && editingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-                <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-slate-800 text-lg">
-                        {editingLog.id ? 'Edit Production Log' : 'Add Production Log'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+                <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 className="font-black text-slate-800 text-xl tracking-tight">
+                        {editingLog.id ? 'แก้ไขบันทึกการผลิต' : 'เพิ่มบันทึกการผลิต'}
                     </h3>
-                    <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                        <X size={20} />
+                    <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-all">
+                        <X size={24} />
                     </button>
                 </div>
                 
-                <div className="p-6 space-y-4">
-                    {/* Date & Shift */}
-                    <div className="grid grid-cols-2 gap-4">
+                <div className="p-8 space-y-5 flex-1 overflow-y-auto">
+                    {/* Order Selection */}
+                    <div className="relative">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ใบสั่งผลิต (Job/PO)</label>
+                        <SearchableSelect 
+                            options={orderOptions}
+                            value={editingLog.orderId}
+                            onChange={handleOrderSelectChange}
+                            placeholder="เลือกใบสั่งผลิต..."
+                        />
+                    </div>
+
+                    {/* Machine */}
+                    <div className="relative">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">เครื่องจักร</label>
+                        <SearchableSelect 
+                            options={machineOptions}
+                            value={editingLog.machine}
+                            onChange={(val) => setEditingLog({...editingLog, machine: val})}
+                            placeholder="เลือกเครื่องจักร..."
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-5">
                         <div>
-                            <label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">วันที่</label>
                             <input 
                                 type="date" 
                                 value={editingLog.date}
                                 onChange={e => setEditingLog({...editingLog, date: e.target.value})}
-                                className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                                className="w-full border border-slate-200 bg-white text-slate-900 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-primary-50"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-slate-500 mb-1">Shift</label>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">กะงาน (Shift)</label>
                             <select 
                                 value={editingLog.shift}
                                 onChange={e => setEditingLog({...editingLog, shift: e.target.value})}
-                                className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                className="w-full border border-slate-200 bg-white text-slate-900 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-primary-50"
                             >
                                 <option value="เช้า">เช้า (Day)</option>
                                 <option value="ดึก">ดึก (Night)</option>
@@ -391,66 +420,57 @@ const Production: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Machine - Using SearchableSelect */}
-                    <div className="relative">
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Machine</label>
-                        <SearchableSelect 
-                            options={machineOptions}
-                            value={editingLog.machine}
-                            onChange={(val) => setEditingLog({...editingLog, machine: val})}
-                            placeholder="Select Machine..."
-                        />
-                    </div>
-
-                    {/* Order Selection - Using SearchableSelect */}
-                    <div className="relative">
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Production Order</label>
-                        <SearchableSelect 
-                            options={orderOptions}
-                            value={editingLog.orderId}
-                            onChange={handleOrderSelectChange}
-                            placeholder="Select Production Order..."
-                        />
-                    </div>
-
-                    {/* Output Quantity */}
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Output Quantity (pcs)</label>
-                        <input 
-                            type="number" 
-                            value={editingLog.quantityProduced}
-                            onChange={e => setEditingLog({...editingLog, quantityProduced: parseInt(e.target.value) || 0})}
-                            className="w-full border border-slate-300 bg-white rounded-lg px-3 py-2 text-xl font-bold text-blue-600 focus:ring-2 focus:ring-primary-500 outline-none"
-                        />
+                    <div className="grid grid-cols-2 gap-5">
+                        {/* Output Quantity */}
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ยอดผลิตได้ (OK)</label>
+                            <input 
+                                type="number" 
+                                value={editingLog.quantityProduced}
+                                onChange={e => setEditingLog({...editingLog, quantityProduced: parseInt(e.target.value) || 0})}
+                                className="w-full border-2 border-primary-100 bg-primary-50/30 text-primary-700 rounded-xl px-4 py-3 text-2xl font-black outline-none focus:ring-4 focus:ring-primary-100 text-right"
+                            />
+                        </div>
+                        
+                        {/* Reject Quantity */}
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ของเสีย (NG)</label>
+                            <input 
+                                type="number" 
+                                value={editingLog.quantityRejected}
+                                onChange={e => setEditingLog({...editingLog, quantityRejected: parseInt(e.target.value) || 0})}
+                                className="w-full border-2 border-red-100 bg-red-50/30 text-red-600 rounded-xl px-4 py-3 text-2xl font-black outline-none focus:ring-4 focus:ring-red-100 text-right"
+                            />
+                        </div>
                     </div>
 
                     {/* Status */}
                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Job Status</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">สถานะงาน</label>
                          <select 
                             value={editingLog.status}
                             onChange={e => setEditingLog({...editingLog, status: e.target.value})}
-                            className="w-full border border-slate-300 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                            className="w-full border border-slate-200 bg-white text-slate-900 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-4 focus:ring-primary-50"
                         >
-                            <option value="In Progress">In Progress (กำลังผลิต)</option>
-                            <option value="Completed">Completed (เสร็จสิ้น)</option>
-                            <option value="Stopped">Stopped (หยุดชั่วคราว)</option>
+                            <option value="In Progress">กำลังผลิต (In Progress)</option>
+                            <option value="รอนับ">ผลิตเสร็จ/รอนับ (Waiting QC)</option>
+                            <option value="Stopped">หยุดชั่วคราว (Stopped)</option>
                         </select>
                     </div>
                 </div>
 
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
                     <button 
                         onClick={() => setIsModalOpen(false)}
-                        className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-200 rounded-lg transition-colors"
+                        className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl transition-all text-sm"
                     >
-                        Cancel
+                        ยกเลิก
                     </button>
                     <button 
                         onClick={handleSaveLog}
-                        className="px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
+                        className="px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-all shadow-lg flex items-center gap-2 text-sm"
                     >
-                        <Save size={18} /> Save Log
+                        <Save size={18} /> บันทึกข้อมูล
                     </button>
                 </div>
             </div>

@@ -53,7 +53,8 @@ const Layout: React.FC = () => {
       icon: Briefcase,
       children: [
         { path: '/customers', label: 'nav.customers' },
-        { path: '/orders', label: 'nav.orders' }
+        { path: '/orders', label: 'nav.orders' },
+        { path: '/production-docs', label: 'nav.poDocs' } // Added Link
       ]
     },
     { 

@@ -6,6 +6,7 @@ const generateSampleOrders = (count: number) => {
     return Array.from({ length: count }).map((_, i) => ({
         id: `order-${i}`,
         name: i % 2 === 0 ? "ฝาหน้ากาก CT A-101" : "ฝาหน้ากาก CT A-102",
+        productId: i % 2 === 0 ? "prod-a101" : "prod-a102",
         customerId: `cust-${(i % 5) + 1}`,
         color: "สีขาว",
         quantity: 1000 + (i * 100),
@@ -127,7 +128,8 @@ const rawJsonData: any = {
   ],
   "packing_boms": [
     {
-      "id": "ฝาหน้ากาก CT A-101 (สีขาว)",
+      "id": "bom-a101",
+      "productId": "prod-a101",
       "productName": "ฝาหน้ากาก CT A-101 (สีขาว)",
       "components": [
         { "rawMaterialId": "l6n1m3o7-o7l6-4mh-j-692l-2o1m4038o4m0", "quantity": 0.023 },
@@ -220,11 +222,11 @@ const rawJsonData: any = {
   },
   "packing_inventory": [
       {
-        "id": "inv-fg-1", "name": "ฝาหน้ากาก CT A-101", "quantity": 1500, "unit": "pcs", "category": "Finished", "source": "Produced",
+        "id": "inv-fg-1", "productId": "prod-a101", "name": "ฝาหน้ากาก CT A-101", "quantity": 1500, "unit": "pcs", "category": "Finished", "source": "Produced",
         "locationId": "loc-b-1", "isoStatus": "Released", "lotNumber": "FG-2501001", "receivedDate": "2025-01-10"
       },
       {
-        "id": "inv-fg-2", "name": "ฝาหน้ากาก CT A-102", "quantity": 500, "unit": "pcs", "category": "Finished", "source": "Produced",
+        "id": "inv-fg-2", "productId": "prod-a102", "name": "ฝาหน้ากาก CT A-102", "quantity": 500, "unit": "pcs", "category": "Finished", "source": "Produced",
         "locationId": "loc-q-01", "isoStatus": "Quarantine", "lotNumber": "FG-2501005", "receivedDate": "2025-01-12"
       }
   ],
@@ -256,14 +258,42 @@ export const getFactoryData = (): FactoryData => {
     
     // 2. Perform derived data linking (BOMs to Products)
     data.factory_products = data.factory_products.map(prod => {
+        // Normalize helper
+        const norm = (s: string) => s ? s.toLowerCase().trim() : '';
         const fullNameKey = `${prod.name} (${prod.color})`;
-        const matchingBom = data.packing_boms.find(b => b.productName === fullNameKey || b.id === fullNameKey || b.productName === prod.name);
+        
+        // Robust BOM finding strategy
+        const matchingBom = data.packing_boms.find(b => {
+            // Prioritize explicit Product ID Match
+            if (b.productId && b.productId === prod.id) return true;
+
+            const bName = norm(b.productName);
+            const bId = norm(b.id);
+            const pName = norm(prod.name);
+            const pFull = norm(fullNameKey);
+            
+            return bName === pFull || bId === pFull || bName === pName || bId === pName;
+        });
+
         if (matchingBom) {
             return {
                 ...prod,
                 bom: matchingBom.components.map(c => {
-                    const mat = data.packing_raw_materials.find(m => m.id === c.rawMaterialId);
-                    return { materialId: c.rawMaterialId, materialName: mat?.name || 'Unknown Material', quantityPerUnit: c.quantity };
+                    // Strategy 1: Direct ID Match
+                    let mat = data.packing_raw_materials.find(m => m.id === c.rawMaterialId);
+                    
+                    // Strategy 2: Match by Name (if ID is actually a name, or data mismatch)
+                    if (!mat) {
+                        mat = data.packing_raw_materials.find(m => 
+                            norm(m.name) === norm(c.rawMaterialId)
+                        );
+                    }
+
+                    return { 
+                        materialId: mat ? mat.id : c.rawMaterialId, // Update ID to real ID if found, else keep original
+                        materialName: mat ? mat.name : (c.rawMaterialId || 'Unknown Material'), 
+                        quantityPerUnit: c.quantity 
+                    };
                 })
             };
         }

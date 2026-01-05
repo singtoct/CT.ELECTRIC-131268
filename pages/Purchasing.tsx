@@ -1,23 +1,65 @@
 
-import React, { useState, useMemo } from 'react';
-import { useFactoryData, useFactoryActions } from '../App';
+import React, { useState, useMemo, useRef } from 'react';
+import { useFactoryData, useFactoryActions, useApiKey } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
     Plus, Search, ShoppingCart, Truck, CheckCircle2, 
     X, Edit2, Trash2, Printer, ChevronDown, Package,
     DollarSign, Calendar, Factory, ChevronLeft, ChevronRight,
-    BarChart3, List, PieChart as PieIcon, TrendingUp, Scale, Clock, Star
+    BarChart3, List, PieChart as PieIcon, TrendingUp, Scale, Clock, Star,
+    AlertCircle, ArrowRight, FileCheck, ClipboardCheck, ScanLine, Loader2
 } from 'lucide-react';
-import { FactoryPurchaseOrder, PurchaseOrderItem, FactorySupplier, FactoryQuotation } from '../types';
+import { FactoryPurchaseOrder, PurchaseOrderItem, FactorySupplier, FactoryQuotation, InventoryItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
     PieChart, Pie, Cell, Legend, LineChart, Line 
 } from 'recharts';
+import { GoogleGenAI } from "@google/genai";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const ITEMS_PER_PAGE = 10;
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899'];
+
+// Restock Assistant Component
+const RestockAssistant = ({ materials, onCreatePO }: { materials: InventoryItem[], onCreatePO: (item: InventoryItem) => void }) => {
+    const { t } = useTranslation();
+    const lowStockItems = materials.filter(m => (m.quantity || 0) < (100)); // Default threshold 100 for now, ideally from settings
+
+    if (lowStockItems.length === 0) return null;
+
+    return (
+        <div className="bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200 rounded-2xl p-4 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-4">
+            <div className="flex items-center gap-4 mb-3 md:mb-0">
+                <div className="bg-orange-500 text-white p-3 rounded-xl shadow-lg shadow-orange-200">
+                    <AlertCircle size={24} />
+                </div>
+                <div>
+                    <h3 className="font-black text-orange-900 text-lg">{t('pur.smartRestock')}</h3>
+                    <p className="text-orange-700 text-xs font-bold">{lowStockItems.length} {t('pur.lowStockAlert')}</p>
+                </div>
+            </div>
+            <div className="flex gap-2 overflow-x-auto max-w-full md:max-w-xl pb-2 md:pb-0 custom-scrollbar">
+                {lowStockItems.slice(0, 3).map(item => (
+                    <div key={item.id} className="bg-white p-3 rounded-xl border border-orange-100 flex items-center gap-3 min-w-[200px] shadow-sm">
+                        <div className="flex-1">
+                            <div className="font-bold text-slate-800 text-xs truncate">{item.name}</div>
+                            <div className="text-red-500 text-[10px] font-black">{item.quantity} {item.unit} left</div>
+                        </div>
+                        <button onClick={() => onCreatePO(item)} className="p-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors">
+                            <Plus size={14}/>
+                        </button>
+                    </div>
+                ))}
+                {lowStockItems.length > 3 && (
+                    <div className="flex items-center justify-center bg-white/50 rounded-xl px-4 text-orange-800 font-bold text-xs whitespace-nowrap">
+                        +{lowStockItems.length - 3} more
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 const Purchasing: React.FC = () => {
   const data = useFactoryData();
@@ -25,10 +67,12 @@ const Purchasing: React.FC = () => {
       factory_purchase_orders = [], 
       factory_suppliers = [], 
       packing_raw_materials = [],
-      factory_quotations = []
+      factory_quotations = [],
+      factory_settings
   } = data;
   const { updateData } = useFactoryActions();
   const { t } = useTranslation();
+  const { apiKey } = useApiKey();
 
   const [view, setView] = useState<'list' | 'analytics' | 'rfq'>('list');
   const [search, setSearch] = useState('');
@@ -40,7 +84,12 @@ const Purchasing: React.FC = () => {
   // --- RFQ State ---
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
   const [currentQuote, setCurrentQuote] = useState<FactoryQuotation | null>(null);
+  
+  // AI Scan State
+  const [isScanning, setIsScanning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- ANALYTICS LOGIC ---
   const analyticsData = useMemo(() => {
@@ -145,8 +194,16 @@ const Purchasing: React.FC = () => {
     packing_raw_materials.map(m => ({ value: m.id, label: m.name, subLabel: `${m.quantity} ${m.unit} in stock` }))
   , [packing_raw_materials]);
 
-  const handleCreateNew = () => {
-    setCurrentPO({ id: generateId(), poNumber: `PUR-${new Date().getFullYear()}${String(factory_purchase_orders.length + 1).padStart(3, '0')}`, orderDate: new Date().toISOString().split('T')[0], expectedDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], supplierId: factory_suppliers[0]?.id || '', status: 'Pending', items: [{ rawMaterialId: '', quantity: 0, unitPrice: 0 }] });
+  const handleCreateNew = (prefillMaterial?: InventoryItem) => {
+    setCurrentPO({ 
+        id: generateId(), 
+        poNumber: `PUR-${new Date().getFullYear()}${String(factory_purchase_orders.length + 1).padStart(3, '0')}`, 
+        orderDate: new Date().toISOString().split('T')[0], 
+        expectedDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
+        supplierId: factory_suppliers[0]?.id || '', 
+        status: 'Pending', 
+        items: [{ rawMaterialId: prefillMaterial?.id || '', quantity: 0, unitPrice: prefillMaterial?.costPerUnit || 0 }] 
+    });
     setIsModalOpen(true);
   };
 
@@ -201,6 +258,87 @@ const Purchasing: React.FC = () => {
       await updateData({ ...data, factory_quotations: factory_quotations.filter(q => q.id !== id) });
   };
 
+  // --- AI FILE IMPORT LOGIC ---
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      processImageWithGemini(file);
+  };
+
+  const processImageWithGemini = async (file: File) => {
+      if (!apiKey) {
+          alert("Please set Gemini API Key in Settings first.");
+          return;
+      }
+      setIsScanning(true);
+
+      try {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = async () => {
+              const base64Data = reader.result?.toString().split(',')[1];
+              if (!base64Data) return;
+
+              const ai = new GoogleGenAI({ apiKey });
+              const prompt = `
+                Analyze this quotation image. Extract the following data into a JSON object:
+                - supplierName (string)
+                - pricePerUnit (number)
+                - moq (number)
+                - unit (string, e.g., kg, pcs)
+                - leadTimeDays (number, estimate if not found)
+                - paymentTerm (string, e.g., Credit 30 Days, Cash)
+                - validUntil (string, YYYY-MM-DD format, estimate 30 days from now if not found)
+                - note (string, any extra conditions)
+
+                Match the supplier name with one of these if possible: ${factory_suppliers.map(s => s.name).join(', ')}.
+                If exact match not found, use the name on the document.
+              `;
+
+              const response = await ai.models.generateContent({
+                  model: "gemini-2.5-flash-latest",
+                  contents: [
+                      {
+                          parts: [
+                              { inlineData: { mimeType: file.type, data: base64Data } },
+                              { text: prompt }
+                          ]
+                      }
+                  ]
+              });
+
+              const text = response.text || "{}";
+              const jsonStr = text.replace(/```json|```/g, '').trim();
+              const result = JSON.parse(jsonStr);
+
+              // Auto-match supplier ID if possible
+              const matchedSupplier = factory_suppliers.find(s => s.name.toLowerCase().includes(result.supplierName?.toLowerCase()));
+
+              setCurrentQuote({
+                  id: generateId(),
+                  rawMaterialId: selectedMaterialId || '',
+                  supplierId: matchedSupplier?.id || '',
+                  pricePerUnit: result.pricePerUnit || 0,
+                  moq: result.moq || 0,
+                  unit: result.unit || 'unit',
+                  leadTimeDays: result.leadTimeDays || 7,
+                  paymentTerm: result.paymentTerm || 'Credit 30 Days',
+                  quotationDate: new Date().toISOString().split('T')[0],
+                  validUntil: result.validUntil || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+                  note: result.note || '',
+                  isPreferred: false
+              });
+              
+              setIsScanning(false);
+              setIsQuoteModalOpen(true);
+          };
+      } catch (error) {
+          console.error("AI Scan Error:", error);
+          alert("Failed to scan document. Please try again.");
+          setIsScanning(false);
+      }
+  };
+
   const calculateTotal = (po: FactoryPurchaseOrder) => {
     return po.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   };
@@ -225,7 +363,7 @@ const Purchasing: React.FC = () => {
                  </button>
             </div>
             {view === 'list' && (
-                 <button onClick={handleCreateNew} className="flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl font-black text-sm shadow-xl hover:bg-slate-800 transition-all active:scale-95"><Plus size={20} /> ออกใบสั่งซื้อ</button>
+                 <button onClick={() => handleCreateNew()} className="flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl font-black text-sm shadow-xl hover:bg-slate-800 transition-all active:scale-95"><Plus size={20} /> ออกใบสั่งซื้อ</button>
             )}
         </div>
       </div>
@@ -285,9 +423,28 @@ const Purchasing: React.FC = () => {
                                       <p className="text-sm text-slate-500 font-medium mt-1">{packing_raw_materials.find(m => m.id === selectedMaterialId)?.name}</p>
                                   </div>
                                   <div className="flex gap-3">
-                                      <button onClick={() => window.print()} className="bg-white border border-slate-300 text-slate-700 px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-slate-50 flex items-center gap-2">
-                                          <Printer size={16}/> Print Summary
+                                      {/* AI Scan Button */}
+                                      <input 
+                                          type="file" 
+                                          ref={fileInputRef} 
+                                          className="hidden" 
+                                          accept="image/*" 
+                                          onChange={handleFileSelect} 
+                                      />
+                                      <button 
+                                          onClick={() => fileInputRef.current?.click()} 
+                                          disabled={isScanning}
+                                          className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-indigo-700 flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all"
+                                      >
+                                          {isScanning ? <Loader2 size={16} className="animate-spin"/> : <ScanLine size={16}/>}
+                                          {isScanning ? "Scanning..." : t('pur.scanQuote')}
                                       </button>
+
+                                      {activeQuotations.length > 0 && (
+                                          <button onClick={() => setIsApprovalModalOpen(true)} className="bg-slate-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-slate-900 flex items-center gap-2 shadow-lg">
+                                              <ClipboardCheck size={16}/> {t('pur.printApproval')}
+                                          </button>
+                                      )}
                                       <button 
                                           onClick={() => {
                                               setCurrentQuote({
@@ -313,10 +470,18 @@ const Purchasing: React.FC = () => {
                                   </div>
                               </div>
 
-                              <div className="flex-1 overflow-auto p-8 custom-scrollbar">
+                              <div className="flex-1 overflow-auto p-8 custom-scrollbar relative">
+                                  {isScanning && (
+                                      <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                                          <ScanLine size={48} className="text-indigo-600 animate-pulse mb-4"/>
+                                          <p className="font-bold text-slate-800">{t('pur.scanning')}</p>
+                                          <p className="text-xs text-slate-500">Gemini AI is extracting data...</p>
+                                      </div>
+                                  )}
+
                                   {activeQuotations.length > 0 ? (
                                       <div className="w-full">
-                                          {/* Title for Print */}
+                                          {/* Title for Print (Basic Summary) */}
                                           <div className="hidden print:block mb-6">
                                               <h1 className="text-2xl font-black">{t('pur.compareTitle')}</h1>
                                               <p className="text-lg">Product: {packing_raw_materials.find(m => m.id === selectedMaterialId)?.name}</p>
@@ -425,28 +590,36 @@ const Purchasing: React.FC = () => {
                                       <div className="h-full flex flex-col items-center justify-center text-slate-300">
                                           <Scale size={64} className="mb-4 opacity-20"/>
                                           <p className="font-black uppercase tracking-widest text-xs">No quotations added yet</p>
-                                          <button 
-                                              onClick={() => {
-                                                  setCurrentQuote({
-                                                      id: generateId(),
-                                                      rawMaterialId: selectedMaterialId,
-                                                      supplierId: '',
-                                                      pricePerUnit: 0,
-                                                      moq: 0,
-                                                      unit: 'kg',
-                                                      leadTimeDays: 7,
-                                                      paymentTerm: 'Credit 30 Days',
-                                                      quotationDate: new Date().toISOString().split('T')[0],
-                                                      validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                                                      note: '',
-                                                      isPreferred: false
-                                                  });
-                                                  setIsQuoteModalOpen(true);
-                                              }}
-                                              className="mt-4 text-amber-600 font-bold text-xs hover:underline"
-                                          >
-                                              + Add First Quote
-                                          </button>
+                                          <div className="flex gap-4 mt-4">
+                                              <button 
+                                                  onClick={() => fileInputRef.current?.click()}
+                                                  className="text-indigo-600 font-bold text-xs hover:underline flex items-center gap-1"
+                                              >
+                                                  <ScanLine size={14}/> Scan Quote (AI)
+                                              </button>
+                                              <button 
+                                                  onClick={() => {
+                                                      setCurrentQuote({
+                                                          id: generateId(),
+                                                          rawMaterialId: selectedMaterialId,
+                                                          supplierId: '',
+                                                          pricePerUnit: 0,
+                                                          moq: 0,
+                                                          unit: 'kg',
+                                                          leadTimeDays: 7,
+                                                          paymentTerm: 'Credit 30 Days',
+                                                          quotationDate: new Date().toISOString().split('T')[0],
+                                                          validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                                                          note: '',
+                                                          isPreferred: false
+                                                      });
+                                                      setIsQuoteModalOpen(true);
+                                                  }}
+                                                  className="text-amber-600 font-bold text-xs hover:underline flex items-center gap-1"
+                                              >
+                                                  <Plus size={14}/> Manual Entry
+                                              </button>
+                                          </div>
                                       </div>
                                   )}
                               </div>
@@ -594,54 +767,59 @@ const Purchasing: React.FC = () => {
       )}
 
       {view === 'list' && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="relative flex-1 max-w-md">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input type="text" placeholder="ค้นหาเลขที่ PO หรือซัพพลายเออร์..." className="w-full pl-12 pr-6 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-50 transition-all outline-none" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Smart Restock Assistant */}
+            <RestockAssistant materials={packing_raw_materials} onCreatePO={handleCreateNew} />
+
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input type="text" placeholder="ค้นหาเลขที่ PO หรือซัพพลายเออร์..." className="w-full pl-12 pr-6 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-50 transition-all outline-none" value={search} onChange={(e) => setSearch(e.target.value)} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronLeft size={20}/></button>
+                        <span className="text-sm font-black text-slate-600">หน้า {currentPage} จาก {totalPages || 1}</span>
+                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronRight size={20}/></button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronLeft size={20}/></button>
-                    <span className="text-sm font-black text-slate-600">หน้า {currentPage} จาก {totalPages || 1}</span>
-                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronRight size={20}/></button>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest border-b border-slate-100">
+                            <tr>
+                                <th className="px-6 py-5">PO Number</th>
+                                <th className="px-6 py-5">Supplier</th>
+                                <th className="px-6 py-5">Date</th>
+                                <th className="px-6 py-5 text-right">Total Amount</th>
+                                <th className="px-6 py-5 text-center">Status</th>
+                                <th className="px-6 py-5 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {paginatedPOs.map((po) => {
+                                const supplier = factory_suppliers.find(s => s.id === po.supplierId);
+                                const total = calculateTotal(po);
+                                return (
+                                    <tr key={po.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-6 py-4 font-black text-slate-800 font-mono">{po.poNumber}</td>
+                                        <td className="px-6 py-4 font-bold text-slate-600">{supplier?.name || 'Unknown'}</td>
+                                        <td className="px-6 py-4 text-slate-500">{po.orderDate}</td>
+                                        <td className="px-6 py-4 text-right font-black text-slate-800">฿{total.toLocaleString()}</td>
+                                        <td className="px-6 py-4">
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border uppercase flex items-center justify-center gap-1 w-fit mx-auto ${po.status === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{po.status}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                {po.status !== 'Received' && <button onClick={() => handleReceiveStock(po)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl" title="Receive Stock"><CheckCircle2 size={18} /></button>}
+                                                <button onClick={() => { setCurrentPO({...po}); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={18} /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest border-b border-slate-100">
-                        <tr>
-                            <th className="px-6 py-5">PO Number</th>
-                            <th className="px-6 py-5">Supplier</th>
-                            <th className="px-6 py-5">Date</th>
-                            <th className="px-6 py-5 text-right">Total Amount</th>
-                            <th className="px-6 py-5 text-center">Status</th>
-                            <th className="px-6 py-5 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {paginatedPOs.map((po) => {
-                            const supplier = factory_suppliers.find(s => s.id === po.supplierId);
-                            const total = calculateTotal(po);
-                            return (
-                                <tr key={po.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-6 py-4 font-black text-slate-800 font-mono">{po.poNumber}</td>
-                                    <td className="px-6 py-4 font-bold text-slate-600">{supplier?.name || 'Unknown'}</td>
-                                    <td className="px-6 py-4 text-slate-500">{po.orderDate}</td>
-                                    <td className="px-6 py-4 text-right font-black text-slate-800">฿{total.toLocaleString()}</td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border uppercase flex items-center justify-center gap-1 w-fit mx-auto ${po.status === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{po.status}</span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            {po.status !== 'Received' && <button onClick={() => handleReceiveStock(po)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl" title="Receive Stock"><CheckCircle2 size={18} /></button>}
-                                            <button onClick={() => { setCurrentPO({...po}); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={18} /></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
             </div>
         </div>
       )}
@@ -729,6 +907,112 @@ const Purchasing: React.FC = () => {
                   <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
                       <button onClick={() => setIsQuoteModalOpen(false)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl transition-all text-xs uppercase">Cancel</button>
                       <button onClick={handleSaveQuote} className="px-8 py-3 bg-amber-500 text-white font-black rounded-xl shadow-lg hover:bg-amber-600 transition-all text-xs uppercase">Save Quote</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* APPROVAL SHEET MODAL (BOSS REPORT) */}
+      {isApprovalModalOpen && selectedMaterialId && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in">
+              <div className="bg-white shadow-2xl w-[210mm] max-h-[90vh] overflow-y-auto flex flex-col animate-in zoom-in">
+                  <div className="p-8 pb-4 print-hidden flex justify-end gap-3 sticky top-0 bg-white z-10 border-b border-slate-200">
+                      <button onClick={() => setIsApprovalModalOpen(false)} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-lg">Close</button>
+                      <button onClick={() => window.print()} className="px-6 py-2 bg-slate-900 text-white font-bold rounded-lg shadow-lg flex items-center gap-2 hover:bg-black"><Printer size={16}/> Print</button>
+                  </div>
+                  
+                  {/* PRINT CONTENT */}
+                  <div className="p-10 space-y-8 text-black bg-white">
+                      <div className="flex justify-between items-start border-b-2 border-black pb-6">
+                          <div>
+                              <h1 className="text-2xl font-bold uppercase">{factory_settings?.companyInfo?.name || 'CT Electric Co., Ltd.'}</h1>
+                              <p className="text-sm text-slate-600 mt-1">Purchasing Department</p>
+                          </div>
+                          <div className="text-right">
+                              <h2 className="text-xl font-black uppercase border-2 border-black px-4 py-1 inline-block">{t('pur.approvalSheet')}</h2>
+                              <p className="text-sm mt-2 font-bold">Date: {new Date().toLocaleDateString()}</p>
+                          </div>
+                      </div>
+
+                      <div>
+                          <h3 className="text-sm font-bold uppercase border-b border-slate-300 pb-1 mb-3">Item Details</h3>
+                          <div className="flex gap-8">
+                              <div>
+                                  <span className="block text-xs font-bold text-slate-500">Material Name</span>
+                                  <span className="text-lg font-bold">{packing_raw_materials.find(m => m.id === selectedMaterialId)?.name}</span>
+                              </div>
+                              <div>
+                                  <span className="block text-xs font-bold text-slate-500">Current Stock</span>
+                                  <span className="text-lg font-bold">{packing_raw_materials.find(m => m.id === selectedMaterialId)?.quantity} {packing_raw_materials.find(m => m.id === selectedMaterialId)?.unit}</span>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div>
+                          <h3 className="text-sm font-bold uppercase border-b border-slate-300 pb-1 mb-3">Supplier Comparison</h3>
+                          <table className="w-full text-sm border-collapse border border-black">
+                              <thead className="bg-slate-100">
+                                  <tr>
+                                      <th className="border border-black p-2 text-left w-1/4">Criteria</th>
+                                      {activeQuotations.map(q => (
+                                          <th key={q.id} className={`border border-black p-2 text-center w-1/4 ${q.isPreferred ? 'bg-slate-200' : ''}`}>
+                                              {factory_suppliers.find(s => s.id === q.supplierId)?.name}
+                                              {q.isPreferred && <span className="block text-[9px] mt-1">(Selected)</span>}
+                                          </th>
+                                      ))}
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  <tr>
+                                      <td className="border border-black p-2 font-bold">Price / Unit</td>
+                                      {activeQuotations.map(q => (
+                                          <td key={q.id} className="border border-black p-2 text-center">฿{q.pricePerUnit.toLocaleString()}</td>
+                                      ))}
+                                  </tr>
+                                  <tr>
+                                      <td className="border border-black p-2 font-bold">Credit Term</td>
+                                      {activeQuotations.map(q => (
+                                          <td key={q.id} className="border border-black p-2 text-center">{q.paymentTerm}</td>
+                                      ))}
+                                  </tr>
+                                  <tr>
+                                      <td className="border border-black p-2 font-bold">Lead Time</td>
+                                      {activeQuotations.map(q => (
+                                          <td key={q.id} className="border border-black p-2 text-center">{q.leadTimeDays} Days</td>
+                                      ))}
+                                  </tr>
+                                  <tr>
+                                      <td className="border border-black p-2 font-bold">MOQ</td>
+                                      {activeQuotations.map(q => (
+                                          <td key={q.id} className="border border-black p-2 text-center">{q.moq} {q.unit}</td>
+                                      ))}
+                                  </tr>
+                              </tbody>
+                          </table>
+                      </div>
+
+                      <div className="border border-black p-4 bg-slate-50">
+                          <h3 className="text-sm font-bold uppercase mb-2">Recommendation / Justification</h3>
+                          <p className="text-sm italic">
+                              Selected <span className="font-bold">{factory_suppliers.find(s => s.id === activeQuotations.find(q=>q.isPreferred)?.supplierId)?.name}</span> due to 
+                              {activeQuotations.find(q=>q.isPreferred)?.id === bestPriceQuote?.id ? ' Best Price Offer.' : 
+                               activeQuotations.find(q=>q.isPreferred)?.id === fastestLeadTimeQuote?.id ? ' Fastest Delivery Time.' : 
+                               ' favorable terms.'}
+                          </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-20 pt-10">
+                          <div className="border-t border-black pt-2 text-center">
+                              <p className="font-bold">{t('pur.manager')}</p>
+                              <p className="text-xs mt-10">(__________________________)</p>
+                              <p className="text-xs mt-1">Date: ____/____/____</p>
+                          </div>
+                          <div className="border-t border-black pt-2 text-center">
+                              <p className="font-bold">{t('pur.ceo')}</p>
+                              <p className="text-xs mt-10">(__________________________)</p>
+                              <p className="text-xs mt-1">Date: ____/____/____</p>
+                          </div>
+                      </div>
                   </div>
               </div>
           </div>

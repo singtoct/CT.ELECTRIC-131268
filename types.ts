@@ -4,6 +4,7 @@
 export interface PackingOrder {
   id: string;
   name: string;
+  productId?: string; // Linked Product ID
   customerId: string;
   color: string;
   quantity: number;
@@ -41,6 +42,7 @@ export type ISOStatus = 'Quarantine' | 'Released' | 'Hold' | 'Rejected';
 
 export interface InventoryItem {
   id: string;
+  productId?: string; // Linked Product ID if it's a finished good
   name: string;
   quantity: number;
   unit: string;
@@ -153,6 +155,7 @@ export interface BOMComponent {
 
 export interface PackingBOM {
   id: string;
+  productId?: string; // Direct Link to Product ID
   productName: string;
   components: BOMComponent[];
 }
@@ -262,6 +265,7 @@ export interface FactoryPurchaseOrder {
   supplierId: string;
   expectedDate: string;
   items: PurchaseOrderItem[];
+  linkedProductionDocId?: string; // New: Link back to Production Doc
 }
 
 export interface FactoryCustomer {
@@ -323,6 +327,8 @@ export interface ProductionDocument {
     createdBy: string;
     note?: string;
     materialShortage?: boolean;
+    signedImageUrl?: string; // New: Stores the uploaded signed document
+    purchaseRequestId?: string; // New: To track if a PR was made
 }
 
 export interface FactoryEmployee {

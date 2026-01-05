@@ -7,7 +7,7 @@ import {
     ArrowRightLeft, CheckCircle2, Factory, Search,
     Package, Edit, Plus, Trash2, Settings, Zap, Layers,
     LayoutGrid, Save, Printer, QrCode, Grid, Move, RotateCw, Grip,
-    MousePointer2, Maximize
+    MousePointer2, Maximize, ArrowDownToLine, ArrowUpToLine
 } from 'lucide-react';
 import { WarehouseLocation, InventoryItem, ISOStatus } from '../types';
 
@@ -42,24 +42,19 @@ const StockCardPrint = ({ location, items }: { location: WarehouseLocation, item
                     <table className="w-full text-sm border-collapse">
                         <thead>
                             <tr className="bg-slate-200">
+                                <th className="border border-slate-800 p-2 text-left">Shelf</th>
                                 <th className="border border-slate-800 p-2 text-left">Item Name</th>
                                 <th className="border border-slate-800 p-2 text-center w-20">Lot</th>
                                 <th className="border border-slate-800 p-2 text-right w-24">Qty</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {items.slice(0, 5).map((item, idx) => (
+                            {items.slice(0, 10).map((item, idx) => (
                                 <tr key={idx}>
+                                    <td className="border border-slate-800 p-3 font-bold text-center">{(item as any).shelf || 1}</td>
                                     <td className="border border-slate-800 p-3 font-bold">{item.name}</td>
                                     <td className="border border-slate-800 p-3 text-center">{item.lotNumber}</td>
                                     <td className="border border-slate-800 p-3 text-right font-black">{item.quantity}</td>
-                                </tr>
-                            ))}
-                            {[...Array(Math.max(0, 5 - items.length))].map((_, i) => (
-                                <tr key={`empty-${i}`} className="h-12">
-                                    <td className="border border-slate-800 p-2"></td>
-                                    <td className="border border-slate-800 p-2"></td>
-                                    <td className="border border-slate-800 p-2"></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -82,19 +77,20 @@ const WarehouseMap: React.FC = () => {
 
     const [viewMode, setViewMode] = useState<'blueprint' | 'grid'>('blueprint');
     const [selectedLocation, setSelectedLocation] = useState<WarehouseLocation | null>(null);
+    const [activeShelfTab, setActiveShelfTab] = useState<number>(1); // New: Track active shelf tab in modal
     const [isDesignMode, setIsDesignMode] = useState(false);
     const [moveItem, setMoveItem] = useState<{ item: InventoryItem, sourceArray: 'inventory' | 'material' } | null>(null);
-    const [editLocationForm, setEditLocationForm] = useState<Partial<WarehouseLocation> | null>(null);
+    
+    // Extend WarehouseLocation type locally to support shelves property if not in global types yet
+    const [editLocationForm, setEditLocationForm] = useState<(Partial<WarehouseLocation> & { totalShelves?: number }) | null>(null);
 
     // --- Drag & Drop Logic & Local State ---
-    // We use a local state for smooth dragging, syncing with DB only on mouse up.
     const [localLocations, setLocalLocations] = useState<WarehouseLocation[]>(warehouse_locations);
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const isDraggingRef = useRef(false); // To distinguish click vs drag
+    const isDraggingRef = useRef(false);
     const mapContainerRef = useRef<HTMLDivElement>(null);
 
-    // Sync local state when DB changes (unless we are currently dragging)
     useEffect(() => {
         if (!draggingId) {
             setLocalLocations(warehouse_locations);
@@ -113,20 +109,23 @@ const WarehouseMap: React.FC = () => {
         return allInventory.filter(item => item.locationId === locationId);
     };
 
-    const getUsagePercentage = (loc: WarehouseLocation) => {
-        const items = getItemsInLocation(loc.id);
+    // Calculate usage per shelf
+    const getShelfUsage = (loc: WarehouseLocation, shelfNumber: number) => {
+        const items = getItemsInLocation(loc.id).filter(i => ((i as any).shelf || 1) === shelfNumber);
         const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
-        if (loc.capacity === 0) return 0;
-        return Math.min((totalQty / loc.capacity) * 100, 100);
+        // Assuming capacity is PER RACK for now, let's split it roughly or use full cap per shelf check
+        // Ideally capacity should be per shelf, but for simplicity: Rack Capacity / Total Shelves
+        const shelfCap = (loc.capacity || 2000) / ((loc as any).totalShelves || 1);
+        if (shelfCap === 0) return 0;
+        return Math.min((totalQty / shelfCap) * 100, 100);
     };
 
     // --- Actions ---
     const handleAddObject = async (type: 'Rack' | 'Floor' | 'Wall' | 'Door') => {
-        // Place new object in center of current scroll view roughly, or fixed 100,100
         const scrollX = mapContainerRef.current?.scrollLeft || 0;
         const scrollY = mapContainerRef.current?.scrollTop || 0;
 
-        const newLoc: WarehouseLocation = {
+        const newLoc: WarehouseLocation & { totalShelves?: number } = {
             id: `obj-${Date.now()}`,
             name: type === 'Wall' ? 'Wall' : `NEW-${warehouse_locations.length + 1}`,
             zone: type === 'Wall' || type === 'Door' ? 'Structure' : 'Raw Material',
@@ -136,86 +135,55 @@ const WarehouseMap: React.FC = () => {
             y: scrollY + 100,
             w: type === 'Rack' ? 60 : type === 'Floor' ? 120 : type === 'Wall' ? 20 : 80,
             h: type === 'Rack' ? 100 : type === 'Floor' ? 80 : type === 'Wall' ? 200 : 20,
-            rotation: 0
-        };
+            rotation: 0,
+            totalShelves: type === 'Rack' ? 1 : undefined // Default to 1 shelf
+        } as any;
+        
         const updatedList = [...warehouse_locations, newLoc];
-        setLocalLocations(updatedList); // Immediate UI update
+        setLocalLocations(updatedList);
         await updateData({ ...data, warehouse_locations: updatedList });
     };
 
     const handleDeleteLocation = async (id: string) => {
         if (!confirm("Confirm Delete? (ยืนยันการลบ?)")) return;
-        
-        // Immediate UI Update
         const newLocs = localLocations.filter(l => l.id !== id);
         setLocalLocations(newLocs);
         setSelectedLocation(null);
         setEditLocationForm(null);
-
-        // Background Sync
         await updateData({ ...data, warehouse_locations: newLocs });
     };
 
     const handleSaveLocation = async () => {
         if (!editLocationForm || !editLocationForm.id) return;
         const updatedLocs = warehouse_locations.map(l => l.id === editLocationForm.id ? { ...l, ...editLocationForm } as WarehouseLocation : l);
-        setLocalLocations(updatedLocs); // Immediate
+        setLocalLocations(updatedLocs);
         await updateData({ ...data, warehouse_locations: updatedLocs });
         setEditLocationForm(null);
         setSelectedLocation(null);
     };
 
-    // --- Drag Handlers ---
-
-    const handleMouseDown = (e: React.MouseEvent, id: string, initialX: number = 0, initialY: number = 0) => {
-        if (!isDesignMode) return;
-        e.preventDefault(); // Prevent text selection
-        e.stopPropagation();
-        
-        isDraggingRef.current = false; // Reset drag flag
-        setDraggingId(id);
-        setDragOffset({ x: e.clientX - initialX, y: e.clientY - initialY });
-    };
-
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDesignMode || !draggingId) return;
-        
-        isDraggingRef.current = true; // Mark as dragging
-        
-        const newX = e.clientX - dragOffset.x;
-        const newY = e.clientY - dragOffset.y;
-        
-        // Update LOCAL state for speed
-        setLocalLocations(prev => prev.map(l => l.id === draggingId ? { ...l, x: newX, y: newY } : l));
-    };
-
-    const handleMouseUp = async () => {
-        if (draggingId && isDraggingRef.current) {
-            // Drag finished, sync to DB
-            await updateData({ ...data, warehouse_locations: localLocations });
-        }
-        setDraggingId(null);
-    };
-
-    const handleObjectClick = (e: React.MouseEvent, loc: WarehouseLocation) => {
-        e.stopPropagation();
-        // Only open edit modal if it was a CLICK, not a drag release
-        if (!isDraggingRef.current) {
-            if (isDesignMode) {
-                setEditLocationForm(loc);
-            } else {
-                setSelectedLocation(loc);
-            }
+    // --- Item Management ---
+    const handleUpdateItemShelf = async (item: InventoryItem, newShelf: number, type: 'inventory' | 'material') => {
+        const updatedItem = { ...item, shelf: newShelf };
+        if (type === 'inventory') {
+            const updatedInv = packing_inventory.map(i => i.id === item.id ? updatedItem : i);
+            await updateData({ ...data, packing_inventory: updatedInv });
+        } else {
+            const updatedMat = packing_raw_materials.map(i => i.id === item.id ? updatedItem : i);
+            await updateData({ ...data, packing_raw_materials: updatedMat });
         }
     };
 
     const handleMoveItem = async (targetLocId: string) => {
         if (!moveItem) return;
+        // Reset shelf to 1 when moving to new rack
+        const updatedItem = { ...moveItem.item, locationId: targetLocId, shelf: 1 };
+        
         if (moveItem.sourceArray === 'inventory') {
-            const updatedInv = packing_inventory.map(i => i.id === moveItem.item.id ? { ...i, locationId: targetLocId } : i);
+            const updatedInv = packing_inventory.map(i => i.id === moveItem.item.id ? updatedItem : i);
             await updateData({ ...data, packing_inventory: updatedInv });
         } else {
-            const updatedMat = packing_raw_materials.map(i => i.id === moveItem.item.id ? { ...i, locationId: targetLocId } : i);
+            const updatedMat = packing_raw_materials.map(i => i.id === moveItem.item.id ? updatedItem : i);
             await updateData({ ...data, packing_raw_materials: updatedMat });
         }
         setMoveItem(null);
@@ -232,6 +200,41 @@ const WarehouseMap: React.FC = () => {
         }
     };
 
+    // --- Drag Handlers ---
+    const handleMouseDown = (e: React.MouseEvent, id: string, initialX: number = 0, initialY: number = 0) => {
+        if (!isDesignMode) return;
+        e.preventDefault(); e.stopPropagation();
+        isDraggingRef.current = false;
+        setDraggingId(id);
+        setDragOffset({ x: e.clientX - initialX, y: e.clientY - initialY });
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDesignMode || !draggingId) return;
+        isDraggingRef.current = true;
+        const newX = e.clientX - dragOffset.x;
+        const newY = e.clientY - dragOffset.y;
+        setLocalLocations(prev => prev.map(l => l.id === draggingId ? { ...l, x: newX, y: newY } : l));
+    };
+
+    const handleMouseUp = async () => {
+        if (draggingId && isDraggingRef.current) {
+            await updateData({ ...data, warehouse_locations: localLocations });
+        }
+        setDraggingId(null);
+    };
+
+    const handleObjectClick = (e: React.MouseEvent, loc: WarehouseLocation) => {
+        e.stopPropagation();
+        if (!isDraggingRef.current) {
+            if (isDesignMode) setEditLocationForm(loc);
+            else { 
+                setSelectedLocation(loc);
+                setActiveShelfTab(1); // Reset to shelf 1
+            }
+        }
+    };
+
     const getISOStatusColor = (status?: ISOStatus) => {
         switch (status) {
             case 'Quarantine': return 'bg-amber-100 text-amber-700 border-amber-200';
@@ -242,7 +245,6 @@ const WarehouseMap: React.FC = () => {
         }
     };
 
-    // Shared input styles - ensuring text visibility and background color
     const inputStyle = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white text-slate-900 font-bold focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none shadow-sm";
 
     return (
@@ -273,59 +275,32 @@ const WarehouseMap: React.FC = () => {
                             </button>
                         </div>
                     )}
-                    <button 
-                        onClick={() => setIsDesignMode(!isDesignMode)} 
-                        className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase flex items-center gap-2 transition-all shadow-sm ${isDesignMode ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                    >
-                        {isDesignMode ? <CheckCircle2 size={16}/> : <Edit size={16}/>}
-                        {isDesignMode ? "Finish Editing" : "Edit Layout"}
+                    <button onClick={() => setIsDesignMode(!isDesignMode)} className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase flex items-center gap-2 transition-all shadow-sm ${isDesignMode ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        {isDesignMode ? <CheckCircle2 size={16}/> : <Edit size={16}/>} {isDesignMode ? "Finish Editing" : "Edit Layout"}
                     </button>
                     <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
-                        <button onClick={() => setViewMode('blueprint')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase flex items-center gap-2 transition-all ${viewMode === 'blueprint' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
-                            <Map size={16}/> Map
-                        </button>
-                        <button onClick={() => setViewMode('grid')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase flex items-center gap-2 transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
-                            <Grid size={16}/> List
-                        </button>
+                        <button onClick={() => setViewMode('blueprint')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase flex items-center gap-2 transition-all ${viewMode === 'blueprint' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Map size={16}/> Map</button>
+                        <button onClick={() => setViewMode('grid')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase flex items-center gap-2 transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Grid size={16}/> List</button>
                     </div>
                 </div>
             </div>
 
             {/* Main Content Area */}
             <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col relative h-[600px] md:h-auto">
-                
                 {viewMode === 'blueprint' ? (
-                    <div 
-                        ref={mapContainerRef}
-                        className={`flex-1 relative overflow-auto bg-slate-50 select-none custom-scrollbar`}
-                        onMouseMove={handleMouseMove}
-                    >
-                        {/* Large Canvas Container */}
-                        <div 
-                            style={{ width: '2000px', height: '2000px', position: 'relative' }}
-                            className={`${isDesignMode ? 'cursor-crosshair' : 'cursor-default'}`}
-                        >
-                            {/* Grid Background */}
-                            <div 
-                                className="absolute inset-0 pointer-events-none opacity-20" 
-                                style={{
-                                    backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px)`,
-                                    backgroundSize: '40px 40px'
-                                }}
-                            ></div>
-
-                            {/* Interactive Elements (Using Local Locations State) */}
+                    <div ref={mapContainerRef} className={`flex-1 relative overflow-auto bg-slate-50 select-none custom-scrollbar`} onMouseMove={handleMouseMove}>
+                        <div style={{ width: '2000px', height: '2000px', position: 'relative' }} className={`${isDesignMode ? 'cursor-crosshair' : 'cursor-default'}`}>
+                            <div className="absolute inset-0 pointer-events-none opacity-20" style={{ backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
                             {localLocations.map((loc) => {
-                                const usage = getUsagePercentage(loc);
                                 const isSelected = selectedLocation?.id === loc.id;
                                 const isWall = loc.type === 'Wall' || loc.type === 'Door' || loc.type === 'Obstacle';
-                                
-                                // Defaults if no layout data
-                                const x = loc.x || 100;
-                                const y = loc.y || 100;
-                                const w = loc.w || (isWall ? 20 : 60);
-                                const h = loc.h || (isWall ? 100 : 80);
+                                const x = loc.x || 100; 
+                                const y = loc.y || 100; 
+                                const w = loc.w || (isWall ? 20 : 60); 
+                                const h = loc.h || (isWall ? 100 : 80); 
                                 const rot = loc.rotation || 0;
+                                
+                                const totalShelves = (loc as any).totalShelves || 1;
 
                                 return (
                                     <div
@@ -335,46 +310,46 @@ const WarehouseMap: React.FC = () => {
                                         className={`absolute transition-shadow group flex items-center justify-center
                                             ${isDesignMode ? 'cursor-move hover:ring-2 ring-amber-400' : 'cursor-pointer hover:scale-[1.02]'}
                                             ${isSelected ? 'ring-4 ring-primary-400 z-10' : ''}
-                                            ${loc.type === 'Rack' ? 'bg-blue-600 rounded-sm shadow-md' : ''}
+                                            ${loc.type === 'Rack' ? 'bg-blue-700 rounded-sm shadow-md' : ''}
                                             ${loc.type === 'Floor' ? 'bg-amber-100 border-2 border-dashed border-amber-300 rounded-lg text-amber-700' : ''}
                                             ${loc.type === 'Wall' ? 'bg-slate-800' : ''}
                                             ${loc.type === 'Door' ? 'bg-white border-2 border-slate-300' : ''}
                                             ${loc.type === 'Obstacle' ? 'bg-slate-200 border border-slate-300' : ''}
                                         `}
-                                        style={{
-                                            left: x,
-                                            top: y,
-                                            width: w,
-                                            height: h,
-                                            transform: `rotate(${rot}deg)`,
-                                            zIndex: isWall ? 0 : 5
-                                        }}
+                                        style={{ left: x, top: y, width: w, height: h, transform: `rotate(${rot}deg)`, zIndex: isWall ? 0 : 5 }}
                                     >
-                                        {/* Content based on Type */}
+                                        {/* Multi-Shelf Rendering */}
                                         {loc.type === 'Rack' && (
-                                            <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
-                                                <span className="text-[10px] font-black text-white bg-blue-800/80 px-1 rounded truncate max-w-full overflow-hidden">{loc.name}</span>
-                                                {h > 40 && (
-                                                    <div className="w-[80%] h-1.5 bg-blue-900/50 rounded-full overflow-hidden mt-1">
-                                                        <div className="h-full bg-green-400" style={{width: `${usage}%`}}></div>
-                                                    </div>
-                                                )}
+                                            <div className="flex flex-col w-full h-full p-0.5 gap-px pointer-events-none">
+                                                {/* Header */}
+                                                <div className="h-4 bg-blue-900/90 w-full flex items-center justify-center">
+                                                    <span className="text-[8px] font-black text-white truncate px-1">{loc.name}</span>
+                                                </div>
+                                                {/* Shelf Bars */}
+                                                <div className="flex-1 flex flex-col gap-px w-full h-full overflow-hidden">
+                                                    {Array.from({ length: totalShelves }).map((_, idx) => {
+                                                        const shelfNum = idx + 1; // Assuming top-down visual order = shelf 1, shelf 2...
+                                                        const usage = getShelfUsage(loc, shelfNum);
+                                                        return (
+                                                            <div key={idx} className="flex-1 bg-blue-800/30 relative w-full border-t border-blue-900/20 first:border-0">
+                                                                <div className="absolute inset-y-0 left-0 bg-green-400/80 transition-all" style={{width: `${usage}%`}}></div>
+                                                                <div className="absolute inset-0 flex items-center justify-center text-[7px] font-bold text-white/50 z-10">L{shelfNum}</div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         )}
-                                        {loc.type === 'Floor' && (
-                                            <div className="flex flex-col items-center text-center pointer-events-none p-1">
-                                                <span className="text-xs font-black uppercase truncate w-full">{loc.name}</span>
-                                                <span className="text-[8px] opacity-70 truncate w-full">{loc.zone}</span>
-                                            </div>
-                                        )}
+                                        
+                                        {loc.type === 'Floor' && <div className="flex flex-col items-center text-center pointer-events-none p-1"><span className="text-xs font-black uppercase truncate w-full">{loc.name}</span><span className="text-[8px] opacity-70 truncate w-full">{loc.zone}</span></div>}
                                         {loc.type === 'Door' && <span className="text-[8px] text-slate-400 font-bold uppercase -rotate-90">Entrance</span>}
                                         {loc.type === 'Obstacle' && <span className="text-xs font-bold text-slate-500 p-1 text-center">{loc.name}</span>}
 
-                                        {/* Tooltip on Hover (View Mode) */}
                                         {!isDesignMode && !isWall && (
                                             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-slate-800 text-white text-xs p-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-20 shadow-xl transition-opacity">
                                                 <p className="font-bold">{loc.name}</p>
                                                 <p className="text-[10px]">{getItemsInLocation(loc.id).length} Items</p>
+                                                {totalShelves > 1 && <p className="text-[9px] text-amber-300">{totalShelves} Shelves</p>}
                                             </div>
                                         )}
                                     </div>
@@ -385,16 +360,13 @@ const WarehouseMap: React.FC = () => {
                 ) : (
                     /* Grid View */
                     <div className="p-8 overflow-y-auto">
-                        <div className="flex justify-end mb-4">
-                             <button onClick={() => handleAddObject('Rack')} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-900 transition-all">
-                                 <Plus size={16}/> Add Location
-                             </button>
-                        </div>
+                        <div className="flex justify-end mb-4"><button onClick={() => handleAddObject('Rack')} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-900 transition-all"><Plus size={16}/> Add Location</button></div>
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                             {warehouse_locations.map(loc => (
                                 <div key={loc.id} onClick={() => setSelectedLocation(loc)} className="border p-4 rounded-xl hover:shadow-md cursor-pointer bg-white">
                                     <h4 className="font-bold text-slate-800">{loc.name}</h4>
                                     <p className="text-xs text-slate-500">{loc.type} • {loc.zone}</p>
+                                    {(loc as any).totalShelves > 1 && <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold mt-2 inline-block">{(loc as any).totalShelves} Levels</span>}
                                 </div>
                             ))}
                         </div>
@@ -402,7 +374,7 @@ const WarehouseMap: React.FC = () => {
                 )}
             </div>
 
-            {/* Design Mode Modal (Edit Rack) */}
+            {/* Design Mode Modal */}
             {editLocationForm && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
@@ -412,10 +384,7 @@ const WarehouseMap: React.FC = () => {
                         </div>
                         <div className="p-6 space-y-4 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Name</label>
-                                    <input type="text" value={editLocationForm.name} onChange={e => setEditLocationForm({...editLocationForm, name: e.target.value})} className={inputStyle} />
-                                </div>
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Name</label><input type="text" value={editLocationForm.name} onChange={e => setEditLocationForm({...editLocationForm, name: e.target.value})} className={inputStyle} /></div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Zone</label>
                                     <select value={editLocationForm.zone} onChange={e => setEditLocationForm({...editLocationForm, zone: e.target.value})} className={inputStyle}>
@@ -430,77 +399,45 @@ const WarehouseMap: React.FC = () => {
                             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Maximize size={10}/> Layout Dimensions</p>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[9px] font-bold text-slate-400 mb-1">Width (px)</label>
-                                        <input type="number" value={editLocationForm.w} onChange={e => setEditLocationForm({...editLocationForm, w: parseInt(e.target.value) || 0})} className={inputStyle + " text-center"} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[9px] font-bold text-slate-400 mb-1">Height (px)</label>
-                                        <input type="number" value={editLocationForm.h} onChange={e => setEditLocationForm({...editLocationForm, h: parseInt(e.target.value) || 0})} className={inputStyle + " text-center"} />
-                                    </div>
+                                    <div><label className="block text-[9px] font-bold text-slate-400 mb-1">Width (px)</label><input type="number" value={editLocationForm.w} onChange={e => setEditLocationForm({...editLocationForm, w: parseInt(e.target.value) || 0})} className={inputStyle + " text-center"} /></div>
+                                    <div><label className="block text-[9px] font-bold text-slate-400 mb-1">Height (px)</label><input type="number" value={editLocationForm.h} onChange={e => setEditLocationForm({...editLocationForm, h: parseInt(e.target.value) || 0})} className={inputStyle + " text-center"} /></div>
                                 </div>
-                                
-                                {/* Slanted / Rotation Control */}
-                                <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label className="block text-[9px] font-bold text-slate-400">Rotate (Slanted Area)</label>
-                                        <span className="text-[10px] font-black text-amber-600">{editLocationForm.rotation || 0}°</span>
+                                {editLocationForm.type === 'Rack' && (
+                                    <div className="border-t border-slate-200 pt-2 mt-2">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="block text-[9px] font-bold text-slate-400">Total Shelves (ชั้นวาง)</label>
+                                            <span className="text-[10px] font-black text-blue-600">{editLocationForm.totalShelves || 1} Levels</span>
+                                        </div>
+                                        <input type="range" min="1" max="5" step="1" value={editLocationForm.totalShelves || 1} onChange={e => setEditLocationForm({...editLocationForm, totalShelves: parseInt(e.target.value)})} className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" />
                                     </div>
+                                )}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1"><label className="block text-[9px] font-bold text-slate-400">Rotate</label><span className="text-[10px] font-black text-amber-600">{editLocationForm.rotation || 0}°</span></div>
                                     <div className="flex items-center gap-2">
                                         <RotateCw size={14} className="text-slate-400"/>
-                                        <input 
-                                            type="range" 
-                                            min="0" 
-                                            max="360" 
-                                            value={editLocationForm.rotation || 0} 
-                                            onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value)})}
-                                            className="w-full accent-amber-500 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                                        />
-                                        <input 
-                                            type="number" 
-                                            value={editLocationForm.rotation || 0} 
-                                            onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value)})}
-                                            className="w-16 border border-slate-300 rounded-lg px-1 py-1 text-center text-xs font-bold text-slate-900 bg-white"
-                                        />
+                                        <input type="range" min="0" max="360" value={editLocationForm.rotation || 0} onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value)})} className="w-full accent-amber-500 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" />
+                                        <input type="number" value={editLocationForm.rotation || 0} onChange={e => setEditLocationForm({...editLocationForm, rotation: parseInt(e.target.value)})} className="w-16 border border-slate-300 rounded-lg px-1 py-1 text-center text-xs font-bold text-slate-900 bg-white" />
                                     </div>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Capacity</label>
-                                    <input type="number" value={editLocationForm.capacity} onChange={e => setEditLocationForm({...editLocationForm, capacity: parseInt(e.target.value)})} className={inputStyle} />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Priority</label>
-                                    <select value={editLocationForm.priority || 'Medium'} onChange={e => setEditLocationForm({...editLocationForm, priority: e.target.value as any})} className={inputStyle}>
-                                        <option value="High">High</option>
-                                        <option value="Medium">Medium</option>
-                                        <option value="Low">Low</option>
-                                    </select>
-                                </div>
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Capacity</label><input type="number" value={editLocationForm.capacity} onChange={e => setEditLocationForm({...editLocationForm, capacity: parseInt(e.target.value)})} className={inputStyle} /></div>
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Priority</label><select value={editLocationForm.priority || 'Medium'} onChange={e => setEditLocationForm({...editLocationForm, priority: e.target.value as any})} className={inputStyle}><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select></div>
                             </div>
                         </div>
                         <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between gap-4">
-                            {editLocationForm.id && (
-                                <button onClick={() => handleDeleteLocation(editLocationForm.id!)} className="text-red-600 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1 transition-all">
-                                    <Trash2 size={16}/> Delete Object
-                                </button>
-                            )}
-                            <button onClick={handleSaveLocation} className="bg-amber-500 text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg hover:bg-amber-600 transition-all flex items-center gap-2 ml-auto">
-                                <Save size={16}/> Save Changes
-                            </button>
+                            {editLocationForm.id && <button onClick={() => handleDeleteLocation(editLocationForm.id!)} className="text-red-600 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1 transition-all"><Trash2 size={16}/> Delete</button>}
+                            <button onClick={handleSaveLocation} className="bg-amber-500 text-white px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg hover:bg-amber-600 transition-all flex items-center gap-2 ml-auto"><Save size={16}/> Save Changes</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* View Mode Modal (Move Item & Detail) */}
+            {/* View Mode Modal */}
             {selectedLocation && (
                 <>
-                    {/* Stock Card Print Component (Hidden unless printing) */}
                     <StockCardPrint location={selectedLocation} items={getItemsInLocation(selectedLocation.id)} />
-
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200 print-hidden">
                         <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[80vh] animate-in zoom-in duration-200">
                             <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -512,16 +449,27 @@ const WarehouseMap: React.FC = () => {
                                     <p className="text-xs font-bold text-slate-400 mt-1">{selectedLocation.description}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => window.print()} className="p-2 bg-slate-800 text-white hover:bg-slate-900 rounded-xl transition-all shadow-lg flex items-center gap-2">
-                                        <Printer size={18}/> <span className="text-xs font-bold uppercase hidden sm:inline">Print Stock Card</span>
-                                    </button>
-                                    <button onClick={() => { setEditLocationForm(selectedLocation); setSelectedLocation(null); }} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all">
-                                        <Edit size={20}/>
-                                    </button>
+                                    <button onClick={() => window.print()} className="p-2 bg-slate-800 text-white hover:bg-slate-900 rounded-xl transition-all shadow-lg flex items-center gap-2"><Printer size={18}/> <span className="text-xs font-bold uppercase hidden sm:inline">Print Stock Card</span></button>
+                                    <button onClick={() => { setEditLocationForm(selectedLocation); setSelectedLocation(null); }} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"><Edit size={20}/></button>
                                     <button onClick={() => setSelectedLocation(null)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-all"><X size={24}/></button>
                                 </div>
                             </div>
                             
+                            {/* Shelf Tabs if > 1 shelf */}
+                            {((selectedLocation as any).totalShelves || 1) > 1 && (
+                                <div className="px-8 pt-4 pb-0 bg-slate-50 border-b border-slate-100 flex gap-2 overflow-x-auto">
+                                    {Array.from({ length: (selectedLocation as any).totalShelves }).map((_, idx) => (
+                                        <button 
+                                            key={idx}
+                                            onClick={() => setActiveShelfTab(idx + 1)}
+                                            className={`px-6 py-2 rounded-t-xl font-bold text-xs transition-all ${activeShelfTab === idx + 1 ? 'bg-white text-blue-600 shadow-[0_-2px_5px_rgba(0,0,0,0.05)] border-t border-x border-slate-100 relative top-px' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                                        >
+                                            Level {idx + 1}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
                             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white">
                                 {moveItem ? (
                                     <div className="space-y-6">
@@ -533,15 +481,10 @@ const WarehouseMap: React.FC = () => {
                                             </div>
                                             <button onClick={() => setMoveItem(null)} className="ml-auto px-4 py-2 bg-white text-blue-600 rounded-lg font-bold text-xs shadow-sm">Cancel Move</button>
                                          </div>
-
                                          <h4 className="font-black text-slate-700 mt-4">Available Locations</h4>
                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                              {warehouse_locations.filter(l => l.id !== selectedLocation.id && l.type === 'Rack').map(loc => (
-                                                 <button 
-                                                    key={loc.id} 
-                                                    onClick={() => handleMoveItem(loc.id)}
-                                                    className="p-4 border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-primary-500 transition-all text-left"
-                                                 >
+                                                 <button key={loc.id} onClick={() => handleMoveItem(loc.id)} className="p-4 border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-primary-500 transition-all text-left">
                                                      <div className="font-black text-slate-700">{loc.name}</div>
                                                      <div className="text-xs text-slate-400">{loc.zone}</div>
                                                  </button>
@@ -554,51 +497,46 @@ const WarehouseMap: React.FC = () => {
                                             <tr>
                                                 <th className="pb-4 px-4">Lot No.</th>
                                                 <th className="pb-4 px-4">Item Name</th>
-                                                <th className="pb-4 px-4 text-center">Status (ISO)</th>
+                                                <th className="pb-4 px-4 text-center">Shelf</th>
+                                                <th className="pb-4 px-4 text-center">Status</th>
                                                 <th className="pb-4 px-4 text-right">Qty</th>
                                                 <th className="pb-4 px-4 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {getItemsInLocation(selectedLocation.id).map((item, idx) => (
+                                            {getItemsInLocation(selectedLocation.id)
+                                                .filter(item => ((selectedLocation as any).totalShelves || 1) === 1 || ((item as any).shelf || 1) === activeShelfTab)
+                                                .map((item, idx) => (
                                                 <tr key={`${item.id}-${idx}`} className="group hover:bg-slate-50">
                                                     <td className="py-4 px-4 font-mono font-bold text-slate-500">{item.lotNumber || '-'}</td>
                                                     <td className="py-4 px-4 font-bold text-slate-800">{item.name}</td>
                                                     <td className="py-4 px-4 text-center">
+                                                        {((selectedLocation as any).totalShelves || 1) > 1 && (
+                                                            <div className="flex items-center justify-center gap-1">
+                                                                <button onClick={() => handleUpdateItemShelf(item, Math.max(1, ((item as any).shelf||1) - 1), item.type as any)} disabled={((item as any).shelf||1) <= 1} className="text-slate-300 hover:text-blue-500 disabled:opacity-20"><ArrowUpToLine size={14}/></button>
+                                                                <span className="font-black text-blue-600 bg-blue-50 px-2 rounded text-xs">L{(item as any).shelf || 1}</span>
+                                                                <button onClick={() => handleUpdateItemShelf(item, Math.min((selectedLocation as any).totalShelves, ((item as any).shelf||1) + 1), item.type as any)} disabled={((item as any).shelf||1) >= (selectedLocation as any).totalShelves} className="text-slate-300 hover:text-blue-500 disabled:opacity-20"><ArrowDownToLine size={14}/></button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-4 px-4 text-center">
                                                         <div className="relative group/status inline-block">
-                                                            <span className={`px-2 py-1 rounded-full text-[10px] font-black border uppercase cursor-pointer ${getISOStatusColor(item.isoStatus)}`}>
-                                                                {item.isoStatus || 'Unknown'}
-                                                            </span>
+                                                            <span className={`px-2 py-1 rounded-full text-[10px] font-black border uppercase cursor-pointer ${getISOStatusColor(item.isoStatus)}`}>{item.isoStatus || 'Unknown'}</span>
                                                             <div className="hidden group-hover/status:block absolute left-1/2 -translate-x-1/2 mt-1 w-32 bg-white border border-slate-200 shadow-xl rounded-xl z-10 py-1 overflow-hidden">
                                                                 {['Released', 'Quarantine', 'Hold', 'Rejected'].map(s => (
-                                                                    <button 
-                                                                        key={s}
-                                                                        onClick={() => handleUpdateStatus(item, s as ISOStatus, item.type as any)}
-                                                                        className="block w-full text-left px-3 py-2 text-[10px] font-bold uppercase hover:bg-slate-50 text-slate-600"
-                                                                    >
-                                                                        {s}
-                                                                    </button>
+                                                                    <button key={s} onClick={() => handleUpdateStatus(item, s as ISOStatus, item.type as any)} className="block w-full text-left px-3 py-2 text-[10px] font-bold uppercase hover:bg-slate-50 text-slate-600">{s}</button>
                                                                 ))}
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td className="py-4 px-4 text-right font-mono text-slate-600">{item.quantity.toLocaleString()} {item.unit}</td>
                                                     <td className="py-4 px-4 text-right">
-                                                        <button 
-                                                            onClick={() => setMoveItem({ item, sourceArray: item.type as any })}
-                                                            className="text-primary-600 font-bold text-xs hover:bg-primary-50 px-3 py-1.5 rounded-lg transition-all"
-                                                        >
-                                                            {t('wms.relocate')}
-                                                        </button>
+                                                        <button onClick={() => setMoveItem({ item, sourceArray: item.type as any })} className="text-primary-600 font-bold text-xs hover:bg-primary-50 px-3 py-1.5 rounded-lg transition-all">{t('wms.relocate')}</button>
                                                     </td>
                                                 </tr>
                                             ))}
-                                            {getItemsInLocation(selectedLocation.id).length === 0 && (
-                                                <tr>
-                                                    <td colSpan={5} className="py-12 text-center text-slate-300 font-bold uppercase tracking-widest text-xs">
-                                                        Empty Rack
-                                                    </td>
-                                                </tr>
+                                            {getItemsInLocation(selectedLocation.id).filter(item => ((selectedLocation as any).totalShelves || 1) === 1 || ((item as any).shelf || 1) === activeShelfTab).length === 0 && (
+                                                <tr><td colSpan={6} className="py-12 text-center text-slate-300 font-bold uppercase tracking-widest text-xs">Empty Shelf</td></tr>
                                             )}
                                         </tbody>
                                     </table>
