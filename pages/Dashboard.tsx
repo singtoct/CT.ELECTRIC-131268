@@ -3,6 +3,7 @@ import React from 'react';
 import { useFactoryData } from '../App';
 import { useTranslation } from '../services/i18n';
 import StatCard from '../components/StatCard';
+import DataHealthCheck from '../components/DataHealthCheck'; // Imported
 import { Package, Activity, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -32,11 +33,21 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard title={t('dash.totalOrders')} value={totalOrders} icon={Package} color="blue" trend="+12%" trendUp={true} />
-        <StatCard title={t('dash.activeMachines')} value={`${activeMachines} / ${totalMachines}`} icon={Activity} color="green" />
-        <StatCard title={t('dash.totalProduction')} value={totalProduced.toLocaleString()} icon={CheckCircle2} color="purple" />
-        <StatCard title={t('dash.pendingQC')} value={pending} icon={AlertCircle} color="orange" trend={`${Math.round((pending / (passed+pending+failed || 1)) * 100)}% ${t('dash.ofTotal')}`} trendUp={false} />
+      
+      {/* Data Health Check Widget (Top Section) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 h-full">
+                <StatCard title={t('dash.totalOrders')} value={totalOrders} icon={Package} color="blue" trend="+12%" trendUp={true} />
+                <StatCard title={t('dash.activeMachines')} value={`${activeMachines} / ${totalMachines}`} icon={Activity} color="green" />
+             </div>
+          </div>
+          <div className="lg:col-span-1">
+             <DataHealthCheck />
+             <div className="mt-4">
+                <StatCard title={t('dash.pendingQC')} value={pending} icon={AlertCircle} color="orange" trend={`${Math.round((pending / (passed+pending+failed || 1)) * 100)}% ${t('dash.ofTotal')}`} trendUp={false} />
+             </div>
+          </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
