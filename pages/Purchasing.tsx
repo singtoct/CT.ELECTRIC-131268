@@ -104,6 +104,7 @@ const Purchasing: React.FC = () => {
 
   // --- RFQ State ---
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
+  const [materialSearch, setMaterialSearch] = useState(''); // Added Search State for Materials
 
   // --- ANALYTICS LOGIC ---
   const analyticsData = useMemo(() => {
@@ -313,8 +314,23 @@ const Purchasing: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm h-fit">
                   <h3 className="font-black text-slate-800 mb-4">{t('pur.selectMaterial')}</h3>
+                  
+                  {/* Search Box for Raw Materials */}
+                  <div className="relative mb-4">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input 
+                          type="text" 
+                          placeholder="ค้นหาชื่อวัตถุดิบ..." 
+                          className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                          value={materialSearch}
+                          onChange={(e) => setMaterialSearch(e.target.value)}
+                      />
+                  </div>
+
                   <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                      {packing_raw_materials.map(mat => (
+                      {packing_raw_materials
+                        .filter(mat => mat.name.toLowerCase().includes(materialSearch.toLowerCase()))
+                        .map(mat => (
                           <button 
                             key={mat.id}
                             onClick={() => setSelectedMaterialId(mat.id)}
@@ -329,6 +345,9 @@ const Purchasing: React.FC = () => {
                               </div>
                           </button>
                       ))}
+                      {packing_raw_materials.filter(mat => mat.name.toLowerCase().includes(materialSearch.toLowerCase())).length === 0 && (
+                          <div className="text-center py-8 text-slate-400 text-xs">ไม่พบวัตถุดิบที่ค้นหา</div>
+                      )}
                   </div>
               </div>
 
