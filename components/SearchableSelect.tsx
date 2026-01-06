@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, Search, Plus } from 'lucide-react';
 
 interface Option {
     value: string | number;
@@ -12,6 +12,7 @@ interface SearchableSelectProps {
     options: Option[];
     value: string | number | null | undefined;
     onChange: (value: any) => void;
+    onCreate?: (newValue: string) => void; // New Prop for creating items
     placeholder?: string;
     className?: string;
     disabled?: boolean;
@@ -19,7 +20,7 @@ interface SearchableSelectProps {
 }
 
 const SearchableSelect: React.FC<SearchableSelectProps> = ({ 
-    options, value, onChange, placeholder = "Select...", className = "", disabled = false, error = false
+    options, value, onChange, onCreate, placeholder = "Select...", className = "", disabled = false, error = false
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -48,6 +49,14 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         onChange(val);
         setIsOpen(false);
         setSearchTerm('');
+    };
+
+    const handleCreate = () => {
+        if (onCreate && searchTerm.trim()) {
+            onCreate(searchTerm.trim());
+            setIsOpen(false);
+            setSearchTerm('');
+        }
     };
 
     return (
@@ -80,10 +89,19 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                                 ref={inputRef}
                                 type="text" 
                                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-md outline-none focus:border-primary-500 !bg-white !text-slate-900 font-bold"
-                                placeholder="พิมพ์เพื่อค้นหา..."
+                                placeholder={onCreate ? "พิมพ์เพื่อค้นหา หรือ เพิ่มใหม่..." : "พิมพ์เพื่อค้นหา..."}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        // If exact match exists, select it
+                                        const exactMatch = filteredOptions.find(o => o.label.toLowerCase() === searchTerm.toLowerCase());
+                                        if (exactMatch) handleSelect(exactMatch.value);
+                                        // Else if Create enabled, create it
+                                        else if (onCreate && searchTerm.trim()) handleCreate();
+                                    }
+                                }}
                             />
                         </div>
                     </div>
@@ -105,8 +123,22 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                                 </div>
                             ))
                         ) : (
-                            <div className="px-3 py-4 text-center text-xs text-slate-400">ไม่พบข้อมูล</div>
+                            <div className="px-3 py-4 text-center">
+                                <span className="text-xs text-slate-400 block mb-2">ไม่พบข้อมูล</span>
+                                {onCreate && searchTerm && (
+                                    <button 
+                                        className="w-full bg-blue-50 text-blue-600 px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-blue-100 transition-all"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleCreate();
+                                        }}
+                                    >
+                                        <Plus size={14}/> เพิ่ม "{searchTerm}"
+                                    </button>
+                                )}
+                            </div>
                         )}
+                        {/* Always show Add button if onCreate is present and we have typed something that is not an exact match (optional UX, keeping it simple above) */}
                     </div>
                 </div>
             )}
