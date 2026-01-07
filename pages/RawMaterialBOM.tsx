@@ -75,7 +75,9 @@ const RawMaterialBOM: React.FC = () => {
         let totalCost = 0;
 
         selectedProduct.bom.forEach(item => {
-            const mat = packing_raw_materials.find(m => m.id === item.materialId);
+            const mat = packing_raw_materials.find(m => m.id === item.materialId) ||
+                        packing_raw_materials.find(m => m.name.trim().toLowerCase() === item.materialName.trim().toLowerCase());
+            
             const stock = mat?.quantity || 0;
             const usage = item.quantityPerUnit || 0;
             const cost = mat?.costPerUnit || 0;
@@ -365,9 +367,9 @@ const RawMaterialBOM: React.FC = () => {
                                             </thead>
                                             <tbody className="divide-y divide-slate-50">
                                                 {selectedProduct.bom.map((item, idx) => {
-                                                    // Ensure we have a valid material match by ID first, then name
+                                                    // Ensure we have a valid material match by ID first, then name (robust matching)
                                                     const mat = packing_raw_materials.find(m => m.id === item.materialId) || 
-                                                                packing_raw_materials.find(m => m.name === item.materialName);
+                                                                packing_raw_materials.find(m => m.name.trim().toLowerCase() === item.materialName.trim().toLowerCase());
                                                     
                                                     const requiredAmount = (item.quantityPerUnit || 0) * simulationQty;
                                                     const currentStock = mat?.quantity || 0;
@@ -379,7 +381,7 @@ const RawMaterialBOM: React.FC = () => {
                                                             <td className="py-4 pl-2">
                                                                 <SearchableSelect 
                                                                     options={materialOptions}
-                                                                    value={mat?.id || item.materialId} // Use resolved ID
+                                                                    value={mat?.id || item.materialId} // Use resolved ID or fallback
                                                                     onChange={(val) => {
                                                                         const newBOM = [...selectedProduct.bom!];
                                                                         const m = packing_raw_materials.find(x => x.id === val);

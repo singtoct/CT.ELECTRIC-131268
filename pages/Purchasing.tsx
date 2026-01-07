@@ -887,7 +887,7 @@ const Purchasing: React.FC = () => {
                                                   <div className="flex-1 relative">
                                                       <Building2 size={14} className="absolute left-0 top-2 text-slate-400"/>
                                                       <input 
-                                                        value={tempSupplier.taxId} 
+                                                        value={tempSupplier.taxId || ''} 
                                                         onChange={e => setTempSupplier({...tempSupplier, taxId: e.target.value})}
                                                         className="w-full pl-5 border-b border-slate-200 py-1 text-xs text-slate-600 focus:border-blue-500 outline-none"
                                                         placeholder="เลขผู้เสียภาษี"
@@ -896,7 +896,7 @@ const Purchasing: React.FC = () => {
                                                   <div className="flex-1 relative">
                                                       <Phone size={14} className="absolute left-0 top-2 text-slate-400"/>
                                                       <input 
-                                                        value={tempSupplier.phone} 
+                                                        value={tempSupplier.phone || ''} 
                                                         onChange={e => setTempSupplier({...tempSupplier, phone: e.target.value})}
                                                         className="w-full pl-5 border-b border-slate-200 py-1 text-xs text-slate-600 focus:border-blue-500 outline-none"
                                                         placeholder="เบอร์โทร"
@@ -907,7 +907,7 @@ const Purchasing: React.FC = () => {
                                                   <MapPin size={14} className="absolute left-0 top-2 text-slate-400"/>
                                                   <textarea 
                                                     rows={2}
-                                                    value={tempSupplier.address} 
+                                                    value={tempSupplier.address || ''} 
                                                     onChange={e => setTempSupplier({...tempSupplier, address: e.target.value})}
                                                     className="w-full pl-5 border border-slate-200 rounded-lg p-2 text-xs text-slate-600 focus:border-blue-500 outline-none resize-none bg-slate-50/50"
                                                     placeholder="ที่อยู่..."

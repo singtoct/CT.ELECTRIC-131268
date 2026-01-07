@@ -234,6 +234,8 @@ export interface FactorySupplier {
   phone: string;
   name: string;
   contactPerson: string;
+  address?: string;
+  taxId?: string;
 }
 
 export interface FactoryQuotation {

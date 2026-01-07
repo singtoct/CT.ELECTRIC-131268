@@ -67,10 +67,11 @@ const Products: React.FC = () => {
         let materialCost = 0;
         if (currentProduct.bom) {
             currentProduct.bom.forEach(b => {
-                const mat = packing_raw_materials.find(m => m.id === b.materialId);
-                // Fallback name matching if ID not found
-                const matByName = !mat ? packing_raw_materials.find(m => m.name === b.materialName) : null;
-                const cost = mat ? mat.costPerUnit : (matByName ? matByName.costPerUnit : 0);
+                // Robust Material Finding: Try ID, then trimmed/lowercase Name
+                const mat = packing_raw_materials.find(m => m.id === b.materialId) ||
+                            packing_raw_materials.find(m => m.name.trim().toLowerCase() === b.materialName.trim().toLowerCase());
+                
+                const cost = mat ? mat.costPerUnit : 0;
                 
                 if (cost) materialCost += b.quantityPerUnit * cost;
             });

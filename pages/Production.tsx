@@ -109,6 +109,7 @@ const Production: React.FC = () => {
                 docId: doc.id,
                 docNumber: doc.docNumber,
                 productName: item.productName,
+                productId: item.productId, // Ensure ID is available
                 target: item.quantity,
                 dueDate: item.dueDate,
                 customer: doc.customerName,
@@ -144,6 +145,7 @@ const Production: React.FC = () => {
         status: 'In Progress',
         lotNumber: prefillJob ? prefillJob.docNumber : '',
         productName: prefillJob ? prefillJob.productName : '',
+        productId: prefillJob ? prefillJob.productId : '', // PREFILL Product ID
         orderId: prefillJob ? prefillJob.docId : '',
         jobId: generateId(),
         operatorName: ''
@@ -183,6 +185,7 @@ const Production: React.FC = () => {
               orderId: opt.doc.id,
               lotNumber: opt.doc.docNumber,
               productName: opt.item.productName,
+              productId: opt.item.productId, // Copy Product ID from selected order
               targetQuantity: opt.item.quantity
           }));
       }

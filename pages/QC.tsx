@@ -25,12 +25,19 @@ const QC: React.FC = () => {
       let updatedFinished = [...packing_inventory];
       let updatedMaterials = [...packing_raw_materials];
 
-      // New Inventory Item Link logic
-      const targetProduct = factory_products.find(p => p.name === log.productName || p.id === log.productId);
-      const targetProductId = targetProduct?.id || log.productId;
+      // New Inventory Item Link logic: Prefer ID from Log, fallback to Name search
+      const targetProduct = factory_products.find(p => p.id === log.productId) || 
+                            factory_products.find(p => p.name === log.productName);
+      
+      const targetProductId = targetProduct?.id || log.productId || '';
 
       if (destination === 'Finished') {
-          const invIdx = updatedFinished.findIndex(i => i.name === log.productName && i.isoStatus === 'Released');
+          // Check for existing inventory using PRODUCT ID match if available, else Name match
+          const invIdx = updatedFinished.findIndex(i => 
+              (i.productId && i.productId === targetProductId) || 
+              (!i.productId && i.name === log.productName && i.isoStatus === 'Released')
+          );
+
           if (invIdx >= 0) {
               updatedFinished[invIdx] = { ...updatedFinished[invIdx], quantity: (updatedFinished[invIdx].quantity || 0) + log.quantityProduced };
           } else {
@@ -53,7 +60,14 @@ const QC: React.FC = () => {
           if (rawIdx >= 0) {
               updatedMaterials[rawIdx] = { ...updatedMaterials[rawIdx], quantity: (updatedMaterials[rawIdx].quantity || 0) + log.quantityProduced };
           } else {
-              updatedMaterials.push({ id: Math.random().toString(36).substr(2,9), name: log.productName, quantity: log.quantityProduced, unit: 'pcs', category: 'Component', source: 'Produced' });
+              updatedMaterials.push({ 
+                  id: Math.random().toString(36).substr(2,9), 
+                  name: log.productName, 
+                  quantity: log.quantityProduced, 
+                  unit: 'pcs', 
+                  category: 'Component', 
+                  source: 'Produced' 
+              });
           }
       }
 
@@ -182,7 +196,7 @@ const QC: React.FC = () => {
                               <p className="text-[11px] text-blue-700 font-bold">System Actions:</p>
                               <ul className="text-[10px] text-blue-600 list-disc pl-3 leading-tight">
                                   <li>ตัดสต็อกวัตถุดิบ (BOM) อัตโนมัติ</li>
-                                  <li>เพิ่มยอด FG ในคลัง</li>
+                                  <li>เพิ่มยอด FG ในคลัง (Link ID: {confirmModal.log.productId || 'N/A'})</li>
                                   <li>อัปเดตสถานะใบสั่งผลิต (PO Progress)</li>
                               </ul>
                           </div>

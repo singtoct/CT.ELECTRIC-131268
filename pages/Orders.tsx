@@ -12,7 +12,7 @@ import { ProductionDocument, MoldingLog } from '../types';
 
 const Orders: React.FC = () => {
   const data = useFactoryData();
-  const { production_documents = [], packing_inventory = [], molding_logs = [] } = data;
+  const { production_documents = [], packing_inventory = [], molding_logs = [], factory_products = [] } = data;
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -20,7 +20,7 @@ const Orders: React.FC = () => {
 
   const planningData = useMemo(() => {
       const productMap: Record<string, {
-          productName: string, totalDemand: number, delivered: number, stock: number, wip: number, qcPending: number,
+          productId?: string, productName: string, totalDemand: number, delivered: number, stock: number, wip: number, qcPending: number,
           orders: { docId: string, docNumber: string, qty: number, dueDate: string, status: string }[]
       }> = {};
 
@@ -32,8 +32,12 @@ const Orders: React.FC = () => {
                   const qcItem = packing_inventory.find(i => i.name === item.productName && i.isoStatus === 'Quarantine');
                   const wipQty = molding_logs.filter(l => l.productName === item.productName && (l.status === 'กำลังผลิต' || l.status === 'In Progress')).reduce((sum, l) => sum + (l.targetQuantity || 0) - (l.quantityProduced || 0), 0);
                   const completedPendingQC = molding_logs.filter(l => l.productName === item.productName && l.status === 'รอนับ').reduce((sum, l) => sum + (l.quantityProduced || 0), 0);
+                  
+                  // Resolve Product ID from Item or Catalog
+                  const resolvedProductId = item.productId || factory_products.find(p => p.name === item.productName)?.id;
 
                   productMap[item.productName] = {
+                      productId: resolvedProductId,
                       productName: item.productName, totalDemand: 0, delivered: 0, stock: stockItem?.quantity || 0,
                       wip: wipQty, qcPending: (qcItem?.quantity || 0) + completedPendingQC, orders: []
                   };
@@ -43,14 +47,14 @@ const Orders: React.FC = () => {
           });
       });
       return Object.values(productMap).sort((a, b) => b.totalDemand - a.totalDemand);
-  }, [production_documents, packing_inventory, molding_logs]);
+  }, [production_documents, packing_inventory, molding_logs, factory_products]);
 
   const toggleProductExpand = (name: string) => {
     setExpandedProducts(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
   };
 
-  const handleCreateProductionOrder = (productName: string, quantity: number) => {
-      navigate('/production-docs', { state: { prefillProduct: productName, prefillQuantity: quantity } });
+  const handleCreateProductionOrder = (productName: string, productId: string | undefined, quantity: number) => {
+      navigate('/production-docs', { state: { prefillProduct: productName, prefillProductId: productId, prefillQuantity: quantity } });
   };
 
   return (
@@ -79,7 +83,10 @@ const Orders: React.FC = () => {
                                   <div className={`p-3 rounded-2xl ${isCritical ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}><Package size={24} /></div>
                                   <div>
                                       <h3 className="text-lg font-black text-slate-800 group-hover:text-blue-600 transition-colors">{plan.productName}</h3>
-                                      <div className="flex items-center gap-3 mt-1 text-xs font-bold text-slate-400"><span>{plan.orders.length} Active Orders</span></div>
+                                      <div className="flex items-center gap-3 mt-1 text-xs font-bold text-slate-400">
+                                          <span>{plan.orders.length} Active Orders</span>
+                                          {plan.productId && <span className="font-mono bg-slate-100 px-1 rounded">ID: {plan.productId}</span>}
+                                      </div>
                                   </div>
                               </div>
                               <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 text-center">
@@ -89,7 +96,7 @@ const Orders: React.FC = () => {
                                   <div className="flex flex-col p-2 rounded-xl bg-purple-50/50 border border-purple-100/50"><span className="text-[9px] font-black text-purple-400 uppercase tracking-wider">{t('mrp.qcPending')}</span><span className="text-lg font-bold text-purple-600">{plan.qcPending.toLocaleString()}</span></div>
                                   <div className={`col-span-2 flex items-center justify-between px-4 py-2 rounded-xl border-2 ${isCritical ? 'bg-rose-50 border-rose-100' : 'bg-green-50 border-green-100'}`}>
                                       <div className="flex flex-col text-left"><span className={`text-[9px] font-black uppercase tracking-wider ${isCritical ? 'text-rose-500' : 'text-green-500'}`}>{isCritical ? t('mrp.shortage') : t('mrp.sufficient')}</span><span className={`text-xl font-black ${isCritical ? 'text-rose-600' : 'text-green-600'}`}>{netRequired.toLocaleString()}</span></div>
-                                      {isCritical && <button onClick={(e) => { e.stopPropagation(); handleCreateProductionOrder(plan.productName, netRequired); }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-rose-700 active:scale-95 transition-all flex items-center gap-2"><Factory size={14}/> {t('mrp.produceNow')}</button>}
+                                      {isCritical && <button onClick={(e) => { e.stopPropagation(); handleCreateProductionOrder(plan.productName, plan.productId, netRequired); }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-rose-700 active:scale-95 transition-all flex items-center gap-2"><Factory size={14}/> {t('mrp.produceNow')}</button>}
                                       {!isCritical && <CheckCircle2 className="text-green-400" size={24}/>}
                                   </div>
                               </div>
