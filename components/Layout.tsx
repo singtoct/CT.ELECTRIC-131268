@@ -220,7 +220,7 @@ const Layout: React.FC = () => {
            <div className="flex items-center gap-3">
              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5">
                 <Languages size={16} className="text-slate-400" />
-                {['th', 'en'].map((lang) => (
+                {['th', 'en', 'cn'].map((lang) => (
                     <button 
                         key={lang}
                         onClick={() => setLanguage(lang as any)} 

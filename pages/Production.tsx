@@ -5,7 +5,7 @@ import { useTranslation } from '../services/i18n';
 import { 
     Cpu, Clock, Calendar, FileText, BarChart3, AlertCircle, CheckCircle2, 
     Plus, Filter, Edit2, Trash2, X, Save, Search, Factory, Calculator, 
-    Timer, Settings, RefreshCcw, ArrowRight
+    Timer, Settings, RefreshCcw, ArrowRight, Power
 } from 'lucide-react';
 import { MoldingLog, ProductionDocument, Product } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
@@ -213,6 +213,16 @@ const Production: React.FC = () => {
       setSimItems(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i));
   };
 
+  const getStatusColor = (status: string) => {
+    switch(status) {
+        case 'ทำงาน': return { dot: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-200', bg: 'bg-emerald-50' };
+        case 'เสีย': return { dot: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-200', bg: 'bg-rose-50' };
+        case 'เม็ดหมด': return { dot: 'bg-amber-500', text: 'text-amber-500', border: 'border-amber-200', bg: 'bg-amber-50' };
+        case 'ทดสอบงาน': return { dot: 'bg-blue-400', text: 'text-blue-400', border: 'border-blue-200', bg: 'bg-blue-50' };
+        default: return { dot: 'bg-slate-300', text: 'text-slate-400', border: 'border-slate-200', bg: 'bg-white' };
+    }
+  };
+
   return (
     <div className="space-y-8 relative pb-20">
       {/* Header & Tabs */}
@@ -239,8 +249,95 @@ const Production: React.FC = () => {
 
       {viewMode === 'monitor' ? (
           <>
+            {/* Machine Status Cards (Visual) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                {factory_machines.map((m) => {
+                    const activeJob = molding_logs.find(l => l.machine === m.name && l.status === 'กำลังผลิต');
+                    const statusStyle = getStatusColor(m.status);
+                    const progress = activeJob ? Math.min((activeJob.quantityProduced / (activeJob.targetQuantity || 1)) * 100, 100) : 0;
+
+                    return (
+                        <div key={m.id} className={`rounded-[1.5rem] shadow-sm border flex flex-col overflow-hidden transition-all relative group ${activeJob ? 'bg-white border-slate-200' : 'bg-slate-50/50 border-dashed border-slate-300'}`}>
+                            {/* Machine Header */}
+                            <div className="p-6 flex-1 space-y-6">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-3 h-3 rounded-full ${statusStyle.dot} animate-pulse`}></div>
+                                        <div>
+                                            <h3 className="text-lg font-black text-slate-800">{m.name}</h3>
+                                            <p className="text-[10px] text-slate-400 font-bold">{m.location}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1 items-center">
+                                        {/* Quick Toggle Button */}
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const newStatus = m.status === 'ทำงาน' ? 'ว่าง' : 'ทำงาน';
+                                                const updated = factory_machines.map(mac => mac.id === m.id ? { ...mac, status: newStatus } : mac);
+                                                updateData({ ...factoryData, factory_machines: updated });
+                                            }}
+                                            className={`p-1.5 rounded-full transition-all ${m.status === 'ทำงาน' ? 'text-green-500 bg-green-50 hover:bg-green-100' : 'text-slate-300 hover:text-slate-500 bg-slate-100'}`}
+                                            title="Toggle On/Off"
+                                        >
+                                            <Power size={14}/>
+                                        </button>
+                                        
+                                        <div className="relative inline-block text-left group/status">
+                                            <button className={`flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer transition-all border ${statusStyle.bg} ${statusStyle.border}`}>
+                                                <span className={`text-[10px] font-black uppercase ${statusStyle.text}`}>{m.status}</span>
+                                            </button>
+                                            <div className="hidden group-hover/status:block absolute right-0 mt-1 w-32 bg-white border border-slate-100 rounded-xl shadow-xl z-20 py-2">
+                                                {['ทำงาน', 'ว่าง', 'เสีย', 'เม็ดหมด', 'ทดสอบงาน'].map(s => (
+                                                    <button key={s} onClick={() => {
+                                                        const updated = factory_machines.map(mac => mac.id === m.id ? { ...mac, status: s } : mac);
+                                                        updateData({ ...factoryData, factory_machines: updated });
+                                                    }} className="w-full text-left px-4 py-2 text-[10px] font-black uppercase hover:bg-slate-50 text-slate-600">
+                                                        {s}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {activeJob ? (
+                                    <div className="space-y-4">
+                                        <div className="space-y-1">
+                                            <div className="flex justify-between items-center">
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></div> กำลังผลิต
+                                                </div>
+                                            </div>
+                                            <div className="text-sm font-black text-slate-800 line-clamp-1">{activeJob.productName}</div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">PO: {activeJob.lotNumber}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <div className="flex justify-between items-end text-[11px] font-black">
+                                                <span className="text-slate-600">{activeJob.quantityProduced.toLocaleString()} / {(activeJob.targetQuantity || 0).toLocaleString()}</span>
+                                                <span className="text-blue-600">{progress.toFixed(1)}%</span>
+                                            </div>
+                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-500 rounded-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="h-24 flex flex-col items-center justify-center text-center space-y-3 opacity-40">
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Ready for Job</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
             {/* 1. Active Production Orders (Smart Tracking) */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-2 mt-6">
                 <div className="p-6 border-b border-slate-200 bg-slate-50/50">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
@@ -345,7 +442,7 @@ const Production: React.FC = () => {
             </div>
 
             {/* 2. Daily Production Log (CRUD) */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-2 mt-6">
                 <div className="p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-blue-50 text-blue-600 p-2 rounded-lg">

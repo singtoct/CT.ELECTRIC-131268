@@ -1,16 +1,18 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from '../services/i18n';
 import { 
     Plus, Printer, Search, Trash2, Save, 
     ChevronRight, PenTool, CheckCircle2, AlertTriangle, PackageSearch,
     Upload, FileText, ShoppingCart, ArrowRight, X, AlertOctagon, ScanLine,
-    Box, Calculator, Calendar, User, Globe, Loader2
+    Box, Calculator, Calendar, User, Globe, Loader2, Copy
 } from 'lucide-react';
 import { ProductionDocument, ProductionDocumentItem, MoldingLog, InventoryItem, FactoryPurchaseOrder, FactoryCustomer } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
+import { useSortableData } from '../hooks/useSortableData';
+import SortableTh from '../components/SortableTh';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -39,6 +41,7 @@ const ProductionOrderDocs: React.FC = () => {
     const { updateData } = useFactoryActions();
     const { t } = useTranslation();
     const location = useLocation();
+    const navigate = useNavigate();
 
     const [view, setView] = useState<'list' | 'create' | 'view'>('list');
     const [search, setSearch] = useState('');
@@ -89,6 +92,13 @@ const ProductionOrderDocs: React.FC = () => {
     const customerOptions = useMemo(() => 
         factory_customers.map(c => ({ value: c.name, label: c.name }))
     , [factory_customers]);
+
+    // --- SORTING HOOK ---
+    const filteredDocs = useMemo(() => {
+        return production_documents.filter(d => d.docNumber.includes(search) || d.customerName.toLowerCase().includes(search.toLowerCase()));
+    }, [production_documents, search]);
+
+    const { items: sortedDocs, requestSort, sortConfig } = useSortableData(filteredDocs, { key: 'docNumber', direction: 'descending' });
 
     // --- LOGIC: Real-time BOM Check ---
     const checkMaterialsAndBOM = (doc: ProductionDocument) => {
@@ -161,6 +171,21 @@ const ProductionOrderDocs: React.FC = () => {
         }
     };
 
+    const handleDuplicate = (doc: ProductionDocument) => {
+        const newDoc: ProductionDocument = {
+            ...doc,
+            id: generateId(),
+            docNumber: `PO-${new Date().getFullYear()}${String(production_documents.length + 1).padStart(3, '0')}`,
+            date: new Date().toISOString().split('T')[0],
+            status: 'Draft',
+            items: doc.items.map(item => ({ ...item, id: generateId(), deliveredQuantity: 0 })),
+            createdBy: 'System (Copy)'
+        };
+        setCurrentDoc(newDoc);
+        setView('create');
+        setIsCreatingCustomer(false);
+    };
+
     const handleSave = async () => {
         if (!currentDoc) return;
 
@@ -193,6 +218,18 @@ const ProductionOrderDocs: React.FC = () => {
         await updateData({ ...data, production_documents: newDocs, factory_customers: updatedCustomers }); // Ensure customers saved
         setView('list');
         setIsCreatingCustomer(false);
+    };
+
+    const handleCreatePR = (requirements: any) => {
+        // Filter only shortage items
+        const shortages = Object.values(requirements).filter((r: any) => r.shortage > 0).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            missingQty: r.shortage,
+            unit: r.unit
+        }));
+
+        navigate('/purchasing', { state: { shortageItems: shortages, fromDoc: currentDoc?.docNumber } });
     };
 
     const updateItem = (index: number, field: keyof ProductionDocumentItem, value: any) => {
@@ -253,29 +290,31 @@ const ProductionOrderDocs: React.FC = () => {
                       <table className="w-full text-sm text-left">
                           <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest border-b border-slate-200">
                               <tr>
-                                  <th className="px-6 py-5">เลขที่เอกสาร</th>
-                                  <th className="px-6 py-5">วันที่สั่งผลิต</th>
-                                  <th className="px-6 py-5">ลูกค้า</th>
-                                  <th className="px-6 py-5 text-center">สถานะ</th>
+                                  <SortableTh label="เลขที่เอกสาร" sortKey="docNumber" currentSort={sortConfig} onSort={requestSort} className="px-6" />
+                                  <SortableTh label="วันที่สั่งผลิต" sortKey="date" currentSort={sortConfig} onSort={requestSort} className="px-6" />
+                                  <SortableTh label="ลูกค้า" sortKey="customerName" currentSort={sortConfig} onSort={requestSort} className="px-6" />
+                                  <SortableTh label="สถานะ" sortKey="status" currentSort={sortConfig} onSort={requestSort} align="center" className="px-6" />
                                   <th className="px-6 py-5 text-right">จัดการ</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                              {production_documents.filter(d => d.docNumber.includes(search)).map(doc => (
+                              {sortedDocs.map(doc => (
                                   <tr key={doc.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setCurrentDoc(doc); setView('view'); }}>
                                       <td className="px-6 py-4 font-mono font-black text-slate-700">{doc.docNumber}</td>
                                       <td className="px-6 py-4">{doc.date}</td>
                                       <td className="px-6 py-4 font-bold text-slate-800">{doc.customerName || '-'}</td>
                                       <td className="px-6 py-4 text-center">
                                           <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase inline-flex items-center gap-1
-                                              ${doc.status === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : 
-                                                doc.status === 'Material Checking' ? 'bg-red-50 text-red-700 border-red-200' : 
+                                              ${doc.status === 'Approved' || doc.status === 'Ready to Ship' ? 'bg-green-50 text-green-700 border-green-200' : 
+                                                doc.status === 'Material Checking' || doc.materialShortage ? 'bg-red-50 text-red-700 border-red-200' : 
+                                                doc.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                                 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                                               {doc.status}
                                           </span>
                                       </td>
                                       <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
                                           <div className="flex items-center justify-end gap-2">
+                                              <button onClick={() => handleDuplicate(doc)} className="p-2 text-slate-400 hover:text-emerald-600 rounded-xl hover:bg-emerald-50 transition-all" title="Duplicate Order"><Copy size={18} /></button>
                                               <button onClick={() => { setCurrentDoc(doc); setView('create'); setIsCreatingCustomer(false); }} className="p-2 text-slate-400 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all"><PenTool size={18} /></button>
                                               <button onClick={() => { if(confirm('ต้องการลบเอกสารนี้?')) updateData({...data, production_documents: production_documents.filter(d => d.id !== doc.id)})}} className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition-all"><Trash2 size={18} /></button>
                                           </div>
@@ -291,12 +330,13 @@ const ProductionOrderDocs: React.FC = () => {
     }
 
     if (view === 'create' && currentDoc) {
+        // ... (Existing create view logic unchanged, just keeping it here for context)
         const { hasShortage, requirements } = checkMaterialsAndBOM(currentDoc);
         
         return (
             <div className="fixed inset-0 z-50 bg-slate-100 flex items-center justify-center p-4 md:p-8 animate-in fade-in zoom-in duration-200">
                 <div className="bg-white w-full max-w-7xl h-full md:h-[90vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden">
-                    
+                    {/* ... (Full modal content same as before) ... */}
                     {/* Header */}
                     <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
                         <div>
@@ -457,6 +497,7 @@ const ProductionOrderDocs: React.FC = () => {
                                                         <span>-{req.shortage.toLocaleString()} {req.unit}</span>
                                                     </div>
                                                     <button 
+                                                        onClick={() => handleCreatePR(requirements)}
                                                         className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-200 transition-all active:scale-95"
                                                     >
                                                         <ShoppingCart size={14}/> เปิดใบขอซื้อ (Create PR)
@@ -492,7 +533,6 @@ const ProductionOrderDocs: React.FC = () => {
 
     if (view === 'view' && currentDoc) {
         // ... (Existing view mode logic remains mostly the same, ensuring consistent styling)
-        // Returning minimal view for brevity in update, in reality, use full implementation
         return (
             <div className="text-center py-20">
                 <p>Document View Mode (See previous implementation)</p>

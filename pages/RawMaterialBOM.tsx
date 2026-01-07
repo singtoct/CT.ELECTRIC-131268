@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { InventoryItem, Product, BOMItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
+import { useSortableData } from '../hooks/useSortableData';
+import SortableTh from '../components/SortableTh';
 
 const RawMaterialBOM: React.FC = () => {
     const data = useFactoryData();
@@ -46,6 +48,9 @@ const RawMaterialBOM: React.FC = () => {
     const filteredMaterials = useMemo(() => {
         return localMaterials.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [localMaterials, searchTerm]);
+
+    // --- SORTING HOOK ---
+    const { items: sortedMaterials, requestSort, sortConfig } = useSortableData(filteredMaterials, { key: 'name', direction: 'ascending' });
 
     const filteredProducts = useMemo(() => {
         return factory_products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -214,15 +219,15 @@ const RawMaterialBOM: React.FC = () => {
                             <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-[2px] border-b border-slate-100">
                                 <tr>
                                     <th className="px-8 py-5 w-10"></th>
-                                    <th className="px-6 py-5">ชื่อวัตถุดิบ (Raw Material)</th>
-                                    <th className="px-6 py-5 w-40 text-center">จำนวนคงเหลือ</th>
-                                    <th className="px-6 py-5 w-24 text-center">หน่วย</th>
-                                    <th className="px-8 py-5 w-40 text-right">ต้นทุน/หน่วย</th>
+                                    <SortableTh label="ชื่อวัตถุดิบ (Raw Material)" sortKey="name" currentSort={sortConfig} onSort={requestSort} />
+                                    <SortableTh label="จำนวนคงเหลือ" sortKey="quantity" currentSort={sortConfig} onSort={requestSort} align="center" />
+                                    <SortableTh label="หน่วย" sortKey="unit" currentSort={sortConfig} onSort={requestSort} align="center" />
+                                    <SortableTh label="ต้นทุน/หน่วย" sortKey="costPerUnit" currentSort={sortConfig} onSort={requestSort} align="right" />
                                     <th className="px-6 py-5 text-center">จัดการ (Actions)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredMaterials.map(m => {
+                                {sortedMaterials.map(m => {
                                     // Resolve Supplier Name
                                     const supplierName = factory_suppliers.find(s => s.id === m.defaultSupplierId)?.name || 'Unknown Supplier';
                                     

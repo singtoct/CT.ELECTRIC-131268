@@ -93,13 +93,9 @@ const QC: React.FC = () => {
               const doc = updatedDocs[docIndex];
               
               // Calculate total produced for this document so far (including current log)
-              const allLogsForDoc = [...molding_logs, { ...log, quantityProduced: log.quantityProduced }]; // Include current indirectly
-              
-              // Recalculate based on Updated Logs state (simulated)
-              // We need to count the current log which is about to be 'เสร็จสิ้น'
-              const producedSoFar = updatedLogs
-                  .filter(l => l.orderId === doc.id && (l.status === 'เสร็จสิ้น' || l.status === 'Completed'))
-                  .reduce((sum, l) => sum + l.quantityProduced, 0);
+              // We simulate the updated state by filtering the logs we just modified locally (updatedLogs is not yet in state but we have it here)
+              const allLogs = updatedLogs.filter(l => l.orderId === doc.id && (l.status === 'เสร็จสิ้น' || l.status === 'Completed'));
+              const producedSoFar = allLogs.reduce((sum, l) => sum + l.quantityProduced, 0);
 
               const totalTarget = doc.items.reduce((sum, item) => sum + item.quantity, 0);
 
