@@ -428,7 +428,7 @@ const Purchasing: React.FC = () => {
               
               const ai = new GoogleGenAI({ apiKey });
               const prompt = `
-                  Analyze this quotation/invoice image. Extract the following information into a strict JSON format:
+                  Analyze this quotation/invoice document (Image or PDF). Extract the following information into a strict JSON format:
                   1. supplier_name: Company Name
                   2. tax_id: Tax Identification Number (if visible)
                   3. address: Company Address
@@ -786,7 +786,7 @@ const Purchasing: React.FC = () => {
                               {isScanning ? <Loader2 size={16} className="animate-spin"/> : <ScanLine size={16}/>}
                               {isScanning ? 'กำลังสแกน...' : 'Scan Quote (AI)'}
                           </button>
-                          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+                          <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} />
                           <button onClick={() => setIsQuoteModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={24}/></button>
                       </div>
                   </div>
