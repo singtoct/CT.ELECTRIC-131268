@@ -122,38 +122,44 @@ const fetchRealBusinessData = async (query: string, apiKey: string) => {
 // Restock Assistant Component
 const RestockAssistant = ({ materials, onCreatePO }: { materials: InventoryItem[], onCreatePO: (item: InventoryItem) => void }) => {
     const { t } = useTranslation();
-    const lowStockItems = materials.filter(m => (m.quantity || 0) < (100)); 
+    // Improved Logic: Use item's specific Min Level (reservedQuantity) if set, otherwise default to 100
+    const lowStockItems = materials.filter(m => (m.quantity || 0) < (m.reservedQuantity || 100)); 
 
     if (lowStockItems.length === 0) return null;
 
     return (
-        <div className="bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200 rounded-2xl p-4 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-4">
-            <div className="flex items-center gap-4 mb-3 md:mb-0">
+        <div className="bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200 rounded-2xl p-4 mb-6 flex flex-col lg:flex-row items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-4 gap-4">
+            <div className="flex items-center gap-4 shrink-0 w-full lg:w-auto">
                 <div className="bg-orange-500 text-white p-3 rounded-xl shadow-lg shadow-orange-200">
                     <AlertCircle size={24} />
                 </div>
                 <div>
-                    <h3 className="font-black text-orange-900 text-lg">{t('pur.smartRestock')}</h3>
+                    <h3 className="font-black text-orange-900 text-lg whitespace-nowrap">{t('pur.smartRestock')}</h3>
                     <p className="text-orange-700 text-xs font-bold">{lowStockItems.length} {t('pur.lowStockAlert')}</p>
                 </div>
             </div>
-            <div className="flex gap-2 overflow-x-auto max-w-full md:max-w-xl pb-2 md:pb-0 custom-scrollbar">
-                {lowStockItems.slice(0, 3).map(item => (
-                    <div key={item.id} className="bg-white p-3 rounded-xl border border-orange-100 flex items-center gap-3 min-w-[200px] shadow-sm">
-                        <div className="flex-1">
-                            <div className="font-bold text-slate-800 text-xs truncate">{item.name}</div>
-                            <div className="text-red-500 text-[10px] font-black">{item.quantity} {item.unit} left</div>
+            
+            {/* Added min-w-0 to allow flex child to shrink properly and show scrollbar */}
+            <div className="flex-1 w-full lg:w-auto min-w-0">
+                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar items-center px-1">
+                    {lowStockItems.slice(0, 4).map(item => (
+                        <div key={item.id} className="bg-white p-3 rounded-xl border border-orange-100 flex items-center gap-3 min-w-[200px] max-w-[240px] shadow-sm shrink-0 hover:shadow-md transition-shadow">
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold text-slate-800 text-xs truncate" title={item.name}>{item.name}</div>
+                                <div className="text-red-500 text-[10px] font-black">{item.quantity} {item.unit} left</div>
+                            </div>
+                            <button onClick={() => onCreatePO(item)} className="p-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors shrink-0">
+                                <Plus size={14}/>
+                            </button>
                         </div>
-                        <button onClick={() => onCreatePO(item)} className="p-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors">
-                            <Plus size={14}/>
-                        </button>
-                    </div>
-                ))}
-                {lowStockItems.length > 3 && (
-                    <div className="flex items-center justify-center bg-white/50 rounded-xl px-4 text-orange-800 font-bold text-xs whitespace-nowrap">
-                        +{lowStockItems.length - 3} more
-                    </div>
-                )}
+                    ))}
+                    {lowStockItems.length > 4 && (
+                        <div className="flex flex-col items-center justify-center bg-white/60 border border-orange-100/50 rounded-xl px-4 h-[58px] min-w-[100px] text-orange-800 font-bold text-xs whitespace-nowrap shrink-0">
+                            <span className="text-lg font-black">+{lowStockItems.length - 4}</span>
+                            <span className="text-[9px] uppercase">items</span>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
