@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -19,7 +18,8 @@ import RawMaterialBOM from './pages/RawMaterialBOM';
 import Purchasing from './pages/Purchasing';
 import WarehouseMap from './pages/WarehouseMap';
 import Reports from './pages/Reports';
-import ProductionOrderDocs from './pages/ProductionOrderDocs'; // Import New Page
+import ProductionOrderDocs from './pages/ProductionOrderDocs';
+import Complaints from './pages/Complaints'; // Import Complaints
 
 import { FactoryData } from './types';
 import { LanguageProvider, useTranslation } from './services/i18n';
@@ -104,10 +104,13 @@ const App: React.FC = () => {
         if (!loadedData.production_documents) {
             loadedData.production_documents = [];
         }
-        // Ensure warehouse locations exist if not present in loaded data
         if (!loadedData.warehouse_locations) {
             const defaultData = getLocalDefault();
             loadedData.warehouse_locations = defaultData.warehouse_locations || [];
+        }
+        // Ensure complaints array exists
+        if (!loadedData.factory_complaints) {
+            loadedData.factory_complaints = [];
         }
         setData(loadedData);
         setError(null);
@@ -181,7 +184,7 @@ const App: React.FC = () => {
                   <Route path="dashboard" element={<Dashboard />} />
                   <Route path="customers" element={<Customers />} />
                   <Route path="orders" element={<Orders />} />
-                  <Route path="production-docs" element={<ProductionOrderDocs />} /> {/* Added Route */}
+                  <Route path="production-docs" element={<ProductionOrderDocs />} />
                   <Route path="machine-status" element={<Maintenance view="status" />} />
                   <Route path="kanban" element={<Kanban />} />
                   <Route path="production" element={<Production />} />
@@ -190,7 +193,7 @@ const App: React.FC = () => {
                   <Route path="raw-materials" element={<RawMaterialBOM />} />
                   <Route path="products" element={<Products />} />
                   <Route path="shipping" element={<Shipping />} />
-                  <Route path="complaints" element={<ComingSoon title="Customer Complaints" />} />
+                  <Route path="complaints" element={<Complaints />} /> {/* Updated Route */}
                   <Route path="employees" element={<Employees />} />
                   <Route path="maintenance" element={<Maintenance view="maintenance" />} />
                   <Route path="purchasing" element={<Purchasing />} />
@@ -205,22 +208,9 @@ const App: React.FC = () => {
               </Routes>
               
               {isOffline && (
-                  <div className="fixed bottom-6 left-6 bg-slate-900 text-white px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-2xl z-50 border border-slate-800 animate-in slide-in-from-left-4">
-                      <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                      <CloudOff size={14} /> Offline Mode (Sync Paused)
-                  </div>
-              )}
-
-              {error && (
-                <div className="fixed bottom-6 right-6 bg-amber-50 border border-amber-200 text-amber-800 px-5 py-3 rounded-2xl shadow-2xl z-50 flex items-center gap-3 animate-in slide-in-from-right-4 border-l-4 border-l-amber-500">
-                  <div className="bg-amber-100 p-1.5 rounded-lg">
-                      <AlertTriangle size={18} className="text-amber-600" />
-                  </div>
-                  <div className="flex flex-col">
-                      <span className="font-black text-xs uppercase tracking-wider">System Alert</span>
-                      <span className="text-sm font-bold">{error}</span>
-                  </div>
-                  <button onClick={() => setError(null)} className="font-bold ml-2 p-1 hover:bg-amber-100 rounded-lg">×</button>
+                <div className="fixed bottom-4 right-4 bg-red-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3 z-[9999] animate-pulse">
+                    <WifiOff size={20}/>
+                    <span className="font-bold">Offline Mode (Local Data)</span>
                 </div>
               )}
             </HashRouter>

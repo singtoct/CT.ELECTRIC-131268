@@ -315,6 +315,7 @@ export interface ProductionDocumentItem {
     unit: string;
     dueDate: string;
     note?: string;
+    deliveredQuantity?: number; // New: Track shipping
 }
 
 export interface ProductionDocument {
@@ -322,13 +323,14 @@ export interface ProductionDocument {
     docNumber: string;
     date: string;
     customerName: string;
-    status: string;
+    status: string; // 'Draft', 'Approved', 'In Progress', 'Ready to Ship', 'Completed'
     items: ProductionDocumentItem[];
     createdBy: string;
     note?: string;
     materialShortage?: boolean;
-    signedImageUrl?: string; // New: Stores the uploaded signed document
-    purchaseRequestId?: string; // New: To track if a PR was made
+    signedImageUrl?: string; 
+    purchaseRequestId?: string; 
+    shippingStatus?: 'Pending' | 'Ready' | 'Partial' | 'Completed'; // New
 }
 
 export interface FactoryEmployee {
@@ -350,6 +352,19 @@ export interface MachineDailyLog {
   jobId: string;
   machineId: string;
   hours: number;
+}
+
+export interface FactoryComplaint {
+  id: string;
+  date: string;
+  customerName: string;
+  topic: string;
+  description: string;
+  status: 'Open' | 'In Progress' | 'Resolved';
+  priority: 'High' | 'Medium' | 'Low';
+  assignedEmployeeId?: string;
+  resolution?: string;
+  resolvedDate?: string;
 }
 
 // --- Main Data Store ---
@@ -377,7 +392,7 @@ export interface FactoryData {
   factory_quotations?: FactoryQuotation[]; // New: RFQ
   read_notifications: { ids: string[] };
   factory_customers: FactoryCustomer[];
-  factory_complaints: any[];
+  factory_complaints: FactoryComplaint[];
   production_queue: ProductionQueueItem[];
   machine_daily_logs: MachineDailyLog[];
   packing_stations: PackingStation[];
