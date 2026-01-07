@@ -95,11 +95,24 @@ const fetchRealBusinessData = async (query: string, apiKey: string) => {
 
     } catch (error: any) {
         console.error("AI Search Failed:", error);
-        // Return error details in the fields so user knows what happened
+        
+        let errorMessage = "ไม่พบข้อมูล กรุณากรอกด้วยตนเอง";
+        const errorStr = JSON.stringify(error) + (error.message || "");
+
+        // Detect Quota Exceeded (429)
+        if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota")) {
+            errorMessage = "⚠️ โควต้า AI เต็ม (Quota Exceeded) กรุณารอสักครู่หรือกรอกเอง";
+        } 
+        // Detect API Key issues
+        else if (errorStr.includes("API_KEY") || errorStr.includes("PERMISSION_DENIED")) {
+            errorMessage = "⚠️ API Key ไม่ถูกต้องหรือถูกระงับ";
+        }
+
+        // Return the entered query as the name so the user doesn't have to retype, and show error in address
         return {
-            name: `ไม่พบข้อมูลสำหรับ: ${cleanQuery}`,
-            address: `System Error: ${error.message || 'Search failed'}. กรุณาลองใหม่อีกครั้งหรือกรอกข้อมูลด้วยตนเอง`,
-            taxId: cleanQuery,
+            name: cleanQuery, 
+            address: errorMessage,
+            taxId: '',
             phone: '',
             contactPerson: ''
         };
@@ -473,13 +486,16 @@ const Purchasing: React.FC = () => {
                   note: `Scanned from document. Item: ${result.item_name}`
               }));
 
-              // Attempt to auto-match material (Simple fuzzy or just notify user)
-              // Here we just notify via the note for now.
           };
           reader.readAsDataURL(file);
-      } catch (error) {
+      } catch (error: any) {
           console.error("Scan failed:", error);
-          alert("Failed to scan document. Please try again.");
+          const errorStr = JSON.stringify(error) + (error.message || "");
+          if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED")) {
+              alert("⚠️ โควต้า AI เต็ม (Quota Exceeded) กรุณาลองใหม่ภายหลัง หรือกรอกเอง");
+          } else {
+              alert("Failed to scan document. Please try again.");
+          }
       } finally {
           setIsScanning(false);
           // Reset file input
