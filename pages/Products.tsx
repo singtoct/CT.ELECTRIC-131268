@@ -27,7 +27,9 @@ const Products: React.FC = () => {
   const calculateProductCost = (prod: Product) => {
     if (!prod.bom) return 0;
     return prod.bom.reduce((acc, item) => {
-      const mat = packing_raw_materials.find(m => m.id === item.materialId);
+      // Robust Match: Try ID first, then Name
+      const mat = packing_raw_materials.find(m => m.id === item.materialId) || 
+                  packing_raw_materials.find(m => m.name === item.materialName);
       return acc + (item.quantityPerUnit * (mat?.costPerUnit || 0));
     }, 0);
   };

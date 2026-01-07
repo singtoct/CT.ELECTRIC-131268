@@ -4,7 +4,8 @@ import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
     Search, Trash2, Plus, Copy, Database, 
-    FileSpreadsheet, CheckCircle, ChevronDown, Printer, X, QrCode, Tag
+    FileSpreadsheet, CheckCircle, ChevronDown, Printer, X, QrCode, Tag,
+    Calculator, AlertTriangle, PackageCheck, ArrowRight, DollarSign
 } from 'lucide-react';
 import { InventoryItem, Product, BOMItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
@@ -19,6 +20,9 @@ const RawMaterialBOM: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProductId, setSelectedProductId] = useState<string | null>(factory_products[0]?.id || null);
     
+    // Simulation State
+    const [simulationQty, setSimulationQty] = useState<number>(1000); // Default simulation target
+
     const [localMaterials, setLocalMaterials] = useState<InventoryItem[]>([]);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -48,6 +52,33 @@ const RawMaterialBOM: React.FC = () => {
             subLabel: `Stock: ${m.quantity} ${m.unit}`
         }))
     , [packing_raw_materials]);
+
+    // --- BOM Analysis Logic ---
+    const bomAnalysis = useMemo(() => {
+        if (!selectedProduct?.bom) return { maxProduceable: 0, totalCost: 0 };
+
+        let maxProduceable = Infinity;
+        let totalCost = 0;
+
+        selectedProduct.bom.forEach(item => {
+            const mat = packing_raw_materials.find(m => m.id === item.materialId);
+            const stock = mat?.quantity || 0;
+            const usage = item.quantityPerUnit || 0;
+            const cost = mat?.costPerUnit || 0;
+
+            totalCost += (usage * cost);
+
+            if (usage > 0) {
+                const possible = Math.floor(stock / usage);
+                if (possible < maxProduceable) maxProduceable = possible;
+            }
+        });
+
+        if (maxProduceable === Infinity) maxProduceable = 0;
+
+        return { maxProduceable, totalCost };
+    }, [selectedProduct, packing_raw_materials]);
+
 
     const handleLocalChange = (id: string, field: keyof InventoryItem, value: any) => {
         setLocalMaterials(prev => prev.map(item => 
@@ -154,19 +185,19 @@ const RawMaterialBOM: React.FC = () => {
             ) : (
                 <div className="flex-1 flex gap-6 overflow-hidden animate-in fade-in duration-300 no-print">
                     {/* Product Selector Sidebar */}
-                    <div className="w-96 flex flex-col gap-4">
+                    <div className="w-80 flex flex-col gap-4">
                         <div className="relative">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                             <input type="text" placeholder="ค้นหาชื่อสินค้า..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputBase} />
                         </div>
                         <div className="flex-1 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-y-auto custom-scrollbar p-3 space-y-2">
                             {filteredProducts.map(p => (
-                                <button key={p.id} onClick={() => setSelectedProductId(p.id)} className={`w-full text-left p-5 rounded-2xl transition-all flex items-center justify-between group ${selectedProductId === p.id ? 'bg-primary-600 text-white shadow-xl shadow-primary-600/20' : 'hover:bg-slate-50 text-slate-700 border border-transparent'}`}>
+                                <button key={p.id} onClick={() => setSelectedProductId(p.id)} className={`w-full text-left p-4 rounded-2xl transition-all flex items-center justify-between group ${selectedProductId === p.id ? 'bg-slate-900 text-white shadow-xl shadow-slate-900/20' : 'hover:bg-slate-50 text-slate-700 border border-transparent'}`}>
                                     <div className="flex flex-col">
                                         <span className="font-black text-sm">{p.name}</span>
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider mt-1 ${selectedProductId === p.id ? 'text-primary-100' : 'text-slate-400'}`}>Color: {p.color}</span>
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider mt-1 ${selectedProductId === p.id ? 'text-slate-400' : 'text-slate-400'}`}>Color: {p.color}</span>
                                     </div>
-                                    {p.bom && p.bom.length > 0 && <CheckCircle size={16} className={selectedProductId === p.id ? 'text-white' : 'text-primary-500'}/>}
+                                    {p.bom && p.bom.length > 0 && <CheckCircle size={16} className={selectedProductId === p.id ? 'text-green-400' : 'text-slate-300'}/>}
                                 </button>
                             ))}
                         </div>
@@ -176,59 +207,150 @@ const RawMaterialBOM: React.FC = () => {
                     <div className="flex-1 bg-white rounded-[2rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
                         {selectedProduct ? (
                             <>
-                                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
-                                    <div>
-                                        <h3 className="text-2xl font-black text-slate-800 tracking-tight">{selectedProduct.name}</h3>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="text-[10px] text-primary-600 font-black uppercase tracking-[2px]">Recipe Control</span>
-                                            <span className="h-1 w-1 rounded-full bg-slate-300"></span>
-                                            <span className="text-[10px] text-slate-400 font-bold italic">Source: Internal MES Data</span>
+                                {/* Header & Summary */}
+                                <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div>
+                                            <h3 className="text-2xl font-black text-slate-800 tracking-tight">{selectedProduct.name}</h3>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className="text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded font-black uppercase tracking-wider text-slate-500">Cycle Time: {selectedProduct.cycleTimeSeconds}s</span>
+                                                <span className="text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded font-black uppercase tracking-wider text-slate-500">Margin: {selectedProduct.profitMargin}%</span>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleCopyBOM} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-all"><Copy size={18}/></button>
+                                    </div>
+
+                                    {/* Simulation & Analysis Bar */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Calculator size={14} className="text-blue-500"/>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Production Simulator</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="number" 
+                                                    value={simulationQty} 
+                                                    onChange={e => setSimulationQty(parseInt(e.target.value) || 0)} 
+                                                    className="w-24 text-center border-b-2 border-blue-500 font-black text-lg text-slate-800 focus:outline-none"
+                                                />
+                                                <span className="text-xs font-bold text-slate-500">Unit Target</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <PackageCheck size={14} className="text-emerald-500"/>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Max Possible Production</span>
+                                            </div>
+                                            <div className="text-2xl font-black text-slate-800">
+                                                {bomAnalysis.maxProduceable.toLocaleString()} <span className="text-xs text-slate-400 font-bold">Units</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <DollarSign size={14} className="text-amber-500"/>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Material Cost / Unit</span>
+                                            </div>
+                                            <div className="text-2xl font-black text-slate-800 font-mono">
+                                                ฿{bomAnalysis.totalCost.toFixed(3)} <span className="text-xs text-slate-400 font-bold"></span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <button onClick={handleCopyBOM} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Copy size={14}/> คัดลอกสูตร</button>
                                 </div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
                                     {selectedProduct.bom && selectedProduct.bom.length > 0 ? (
                                         <table className="w-full text-sm">
-                                            <thead className="text-slate-400 font-black text-[10px] uppercase tracking-[3px] border-b border-slate-100">
+                                            <thead className="text-slate-400 font-black text-[10px] uppercase tracking-[2px] border-b border-slate-100 bg-white sticky top-0 z-10">
                                                 <tr>
-                                                    <th className="pb-6 px-4 text-left">วัตถุดิบประกอบ</th>
-                                                    <th className="pb-6 px-4 text-center w-40">จำนวนใช้งาน (Usage)</th>
-                                                    <th className="pb-6 px-4 text-center">หน่วย</th>
-                                                    <th className="pb-6 px-4 text-right">ทุนปัจจุบัน</th>
-                                                    <th className="pb-6 px-4 text-right">รวมต้นทุน</th>
+                                                    <th className="pb-4 pl-2 text-left">Component (Raw Material)</th>
+                                                    <th className="pb-4 px-2 text-center w-28">Usage / Unit</th>
+                                                    <th className="pb-4 px-2 text-center w-32">Required (Sim)</th>
+                                                    <th className="pb-4 px-2 text-center w-32">Current Stock</th>
+                                                    <th className="pb-4 px-2 text-center w-28">Status</th>
+                                                    <th className="pb-4 pr-2 text-right">Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-50">
                                                 {selectedProduct.bom.map((item, idx) => {
-                                                    const mat = packing_raw_materials.find(m => m.id === item.materialId);
-                                                    const cost = mat?.costPerUnit || 0;
-                                                    const total = (item.quantityPerUnit || 0) * cost;
+                                                    // Ensure we have a valid material match by ID first, then name
+                                                    const mat = packing_raw_materials.find(m => m.id === item.materialId) || 
+                                                                packing_raw_materials.find(m => m.name === item.materialName);
+                                                    
+                                                    const requiredAmount = (item.quantityPerUnit || 0) * simulationQty;
+                                                    const currentStock = mat?.quantity || 0;
+                                                    const shortage = Math.max(0, requiredAmount - currentStock);
+                                                    const isShortage = shortage > 0;
+
                                                     return (
-                                                        <tr key={idx} className="group">
-                                                            <td className="py-5 px-4">
+                                                        <tr key={idx} className="group hover:bg-slate-50/50 transition-colors">
+                                                            <td className="py-4 pl-2">
                                                                 <SearchableSelect 
                                                                     options={materialOptions}
-                                                                    value={item.materialId}
+                                                                    value={mat?.id || item.materialId} // Use resolved ID
                                                                     onChange={(val) => {
                                                                         const newBOM = [...selectedProduct.bom!];
                                                                         const m = packing_raw_materials.find(x => x.id === val);
                                                                         newBOM[idx] = { ...newBOM[idx], materialId: val, materialName: m?.name || '' };
                                                                         updateData({...data, factory_products: factory_products.map(p => p.id === selectedProduct.id ? {...selectedProduct, bom: newBOM} : p)});
                                                                     }}
-                                                                    placeholder="ระบุวัตถุดิบ..."
+                                                                    placeholder="Select Material..."
+                                                                    className="border-0 shadow-none bg-transparent"
                                                                 />
                                                             </td>
-                                                            <td className="py-5 px-4">
-                                                                <input type="number" step="any" value={item.quantityPerUnit || ''} onChange={e => {
-                                                                    const newBOM = [...selectedProduct.bom!];
-                                                                    newBOM[idx].quantityPerUnit = parseFloat(e.target.value) || 0;
-                                                                    updateData({...data, factory_products: factory_products.map(p => p.id === selectedProduct.id ? {...selectedProduct, bom: newBOM} : p)});
-                                                                }} className={tableInput + " text-lg py-2.5"} />
+                                                            <td className="py-4 px-2">
+                                                                <div className="flex items-center justify-center">
+                                                                    <input 
+                                                                        type="number" 
+                                                                        step="any" 
+                                                                        value={item.quantityPerUnit || ''} 
+                                                                        onChange={e => {
+                                                                            const newBOM = [...selectedProduct.bom!];
+                                                                            newBOM[idx].quantityPerUnit = parseFloat(e.target.value) || 0;
+                                                                            updateData({...data, factory_products: factory_products.map(p => p.id === selectedProduct.id ? {...selectedProduct, bom: newBOM} : p)});
+                                                                        }} 
+                                                                        className="w-20 text-center border-b border-slate-300 focus:border-blue-500 outline-none bg-transparent font-bold text-slate-800"
+                                                                    />
+                                                                    <span className="text-xs text-slate-400 ml-1 font-bold">{mat?.unit}</span>
+                                                                </div>
                                                             </td>
-                                                            <td className="py-5 px-4 text-center font-black text-slate-400">{mat?.unit || 'kg'}</td>
-                                                            <td className="py-5 px-4 text-right font-mono text-slate-400">฿{cost.toFixed(2)}</td>
-                                                            <td className="py-5 px-4 text-right font-black text-slate-800 text-lg">฿{total.toFixed(2)}</td>
+                                                            <td className="py-4 px-2 text-center">
+                                                                <div className="font-mono font-bold text-slate-600 bg-slate-100 rounded-lg py-1 px-2 inline-block text-xs">
+                                                                    {requiredAmount.toLocaleString(undefined, {maximumFractionDigits: 4})} {mat?.unit}
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-4 px-2 text-center">
+                                                                <div className="font-mono text-sm font-bold text-slate-700">
+                                                                    {currentStock.toLocaleString(undefined, {maximumFractionDigits: 2})}
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-4 px-2 text-center">
+                                                                {isShortage ? (
+                                                                    <div className="flex flex-col items-center">
+                                                                        <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 border border-red-100">
+                                                                            <AlertTriangle size={10}/> Shortage
+                                                                        </span>
+                                                                        <span className="text-[9px] text-red-500 font-bold mt-0.5">-{shortage.toFixed(2)} {mat?.unit}</span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="bg-green-50 text-green-600 px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 border border-green-100 w-fit mx-auto">
+                                                                        <CheckCircle size={10}/> Available
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-4 pr-2 text-right">
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        const newBOM = selectedProduct.bom!.filter((_, i) => i !== idx);
+                                                                        updateData({...data, factory_products: factory_products.map(p => p.id === selectedProduct.id ? {...selectedProduct, bom: newBOM} : p)});
+                                                                    }}
+                                                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                                >
+                                                                    <Trash2 size={16}/>
+                                                                </button>
+                                                            </td>
                                                         </tr>
                                                     );
                                                 })}
@@ -241,15 +363,18 @@ const RawMaterialBOM: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                                <div className="p-10 bg-slate-50 border-t border-slate-100 flex justify-between items-center relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-full h-1 bg-primary-500"></div>
+                                <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center relative">
                                     <div className="flex flex-col">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[4px]">Total Material Cost / Unit</span>
-                                        <span className="text-4xl font-black text-slate-800 font-mono tracking-tighter">฿{selectedProduct.bom?.reduce((acc, i) => acc + (i.quantityPerUnit * (packing_raw_materials.find(m => m.id === i.materialId)?.costPerUnit || 0)), 0).toFixed(4)}</span>
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Components</span>
+                                        <span className="text-lg font-black text-slate-800">{selectedProduct.bom?.length || 0} Items</span>
                                     </div>
                                     <div className="flex gap-4">
-                                        <button onClick={() => updateData({...data, factory_products: factory_products.map(p => p.id === selectedProduct.id ? {...selectedProduct, bom: [...(selectedProduct.bom || []), { materialId: '', materialName: '', quantityPerUnit: 0 }]} : p)})} className="px-8 py-4 bg-white border border-slate-300 rounded-2xl font-black text-sm text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2">เพิ่มวัตถุดิบ</button>
-                                        <button onClick={() => alert("BOM Updated in System Memory")} className="px-10 py-4 bg-primary-600 text-white rounded-2xl font-black shadow-2xl shadow-primary-600/30 hover:bg-primary-700 transition-all active:scale-95 flex items-center gap-2">บันทึกสูตรผลิต</button>
+                                        <button onClick={() => updateData({...data, factory_products: factory_products.map(p => p.id === selectedProduct.id ? {...selectedProduct, bom: [...(selectedProduct.bom || []), { materialId: '', materialName: '', quantityPerUnit: 0 }]} : p)})} className="px-6 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm">
+                                            <Plus size={14}/> Add Component
+                                        </button>
+                                        <button onClick={() => alert("BOM Updated in System Memory")} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-black text-xs shadow-xl shadow-slate-900/20 hover:bg-black transition-all active:scale-95 flex items-center gap-2">
+                                            <Database size={14}/> Save Recipe
+                                        </button>
                                     </div>
                                 </div>
                             </>

@@ -8,7 +8,7 @@ import {
     DollarSign, Calendar, Factory, ChevronLeft, ChevronRight,
     BarChart3, List, PieChart as PieIcon, TrendingUp, Scale, Clock, Star,
     AlertCircle, ArrowRight, FileCheck, ClipboardCheck, ScanLine, Loader2,
-    Building2, Globe, Sparkles, Filter
+    Building2, Globe, Sparkles, Filter, Save
 } from 'lucide-react';
 import { FactoryPurchaseOrder, PurchaseOrderItem, FactorySupplier, FactoryQuotation, InventoryItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
@@ -105,6 +105,10 @@ const Purchasing: React.FC = () => {
   // --- RFQ State ---
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [materialSearch, setMaterialSearch] = useState(''); // Added Search State for Materials
+  
+  // --- ADD QUOTE MODAL STATE ---
+  const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
+  const [currentQuote, setCurrentQuote] = useState<Partial<FactoryQuotation>>({});
 
   // --- ANALYTICS LOGIC ---
   const analyticsData = useMemo(() => {
@@ -285,6 +289,38 @@ const Purchasing: React.FC = () => {
     return po.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   };
 
+  // --- QUOTE HANDLERS ---
+  const handleOpenAddQuote = () => {
+      if (!selectedMaterialId) return;
+      const mat = packing_raw_materials.find(m => m.id === selectedMaterialId);
+      setCurrentQuote({
+          id: generateId(),
+          rawMaterialId: selectedMaterialId,
+          quotationDate: new Date().toISOString().split('T')[0],
+          validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          supplierId: '',
+          pricePerUnit: 0,
+          moq: 0,
+          leadTimeDays: 7,
+          paymentTerm: 'Credit 30 Days',
+          unit: mat?.unit || 'kg',
+          note: ''
+      });
+      setIsQuoteModalOpen(true);
+  };
+
+  const handleSaveQuote = async () => {
+      if (!currentQuote.supplierId || !currentQuote.pricePerUnit) {
+          alert("กรุณาระบุซัพพลายเออร์และราคา");
+          return;
+      }
+      
+      const newQuote = currentQuote as FactoryQuotation;
+      const currentQuotes = factory_quotations || [];
+      await updateData({ ...data, factory_quotations: [...currentQuotes, newQuote] });
+      setIsQuoteModalOpen(false);
+  };
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -359,7 +395,10 @@ const Purchasing: React.FC = () => {
                                   <h3 className="text-xl font-black text-slate-800">{packing_raw_materials.find(m => m.id === selectedMaterialId)?.name}</h3>
                                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{t('pur.compareTitle')}</p>
                               </div>
-                              <button className="bg-slate-900 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-black transition-all">
+                              <button 
+                                onClick={handleOpenAddQuote}
+                                className="bg-slate-900 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-black transition-all"
+                              >
                                   <Plus size={16}/> {t('pur.addQuote')}
                               </button>
                           </div>
@@ -678,6 +717,105 @@ const Purchasing: React.FC = () => {
                               <CheckCircle2 size={20}/> บันทึก PO
                           </button>
                       </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* ADD QUOTE MODAL */}
+      {isQuoteModalOpen && currentQuote && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in duration-200">
+                  <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                      <div>
+                          <h3 className="text-xl font-black text-slate-800 tracking-tight">เพิ่มใบเสนอราคา</h3>
+                          <p className="text-xs text-slate-500 font-bold">
+                              สำหรับ: {packing_raw_materials.find(m => m.id === currentQuote.rawMaterialId)?.name}
+                          </p>
+                      </div>
+                      <button onClick={() => setIsQuoteModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={24}/></button>
+                  </div>
+                  
+                  <div className="p-8 space-y-5 flex-1 overflow-y-auto">
+                      <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Supplier</label>
+                          <SearchableSelect 
+                              options={supplierOptions}
+                              value={currentQuote.supplierId}
+                              onChange={(val) => setCurrentQuote({...currentQuote, supplierId: val})}
+                              placeholder="เลือกซัพพลายเออร์..."
+                          />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5">
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">ราคา / หน่วย ({currentQuote.unit})</label>
+                              <input 
+                                type="number" 
+                                value={currentQuote.pricePerUnit} 
+                                onChange={e => setCurrentQuote({...currentQuote, pricePerUnit: parseFloat(e.target.value)})}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-black text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none text-right"
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">MOQ (ขั้นต่ำ)</label>
+                              <input 
+                                type="number" 
+                                value={currentQuote.moq} 
+                                onChange={e => setCurrentQuote({...currentQuote, moq: parseFloat(e.target.value)})}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none text-right"
+                              />
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5">
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Lead Time (วัน)</label>
+                              <input 
+                                type="number" 
+                                value={currentQuote.leadTimeDays} 
+                                onChange={e => setCurrentQuote({...currentQuote, leadTimeDays: parseInt(e.target.value)})}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Credit Term</label>
+                              <input 
+                                type="text" 
+                                value={currentQuote.paymentTerm} 
+                                onChange={e => setCurrentQuote({...currentQuote, paymentTerm: e.target.value})}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">ราคาใช้ได้ถึง (Valid Until)</label>
+                          <input 
+                            type="date" 
+                            value={currentQuote.validUntil} 
+                            onChange={e => setCurrentQuote({...currentQuote, validUntil: e.target.value})}
+                            className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                      </div>
+                      
+                      <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">หมายเหตุ</label>
+                          <textarea 
+                            rows={2}
+                            value={currentQuote.note || ''} 
+                            onChange={e => setCurrentQuote({...currentQuote, note: e.target.value})}
+                            className="w-full px-4 py-3 border border-slate-300 rounded-xl font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                            placeholder="เงื่อนไขเพิ่มเติม..."
+                          />
+                      </div>
+                  </div>
+
+                  <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                      <button onClick={() => setIsQuoteModalOpen(false)} className="px-6 py-3 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all">ยกเลิก</button>
+                      <button onClick={handleSaveQuote} className="px-8 py-3 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-black transition-all flex items-center gap-2">
+                          <Save size={18}/> บันทึกใบเสนอราคา
+                      </button>
                   </div>
               </div>
           </div>
