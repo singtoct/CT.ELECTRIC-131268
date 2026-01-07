@@ -8,7 +8,7 @@ import {
     DollarSign, Calendar, Factory, ChevronLeft, ChevronRight,
     BarChart3, List, PieChart as PieIcon, TrendingUp, Scale, Clock, Star,
     AlertCircle, ArrowRight, FileCheck, ClipboardCheck, ScanLine, Loader2,
-    Building2, Globe, Sparkles, Filter, Save, Zap, Key
+    Building2, Globe, Sparkles, Filter, Save, Zap, Key, MapPin, Phone, Upload, FileText
 } from 'lucide-react';
 import { FactoryPurchaseOrder, PurchaseOrderItem, FactorySupplier, FactoryQuotation, InventoryItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
@@ -22,68 +22,51 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 const ITEMS_PER_PAGE = 10;
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899'];
 
-// --- Specific Known Entities (Instant Fix for Demo/Test) ---
-const KNOWN_ENTITIES: Record<string, any> = {
-    "0745559006509": {
-        name: "บริษัท ทรงเกียรติ์ การพิมพ์ จำกัด",
-        address: "70/123 หมู่ 4 ต.บางแม่นาง อ.บางใหญ่ จ.นนทบุรี 11140",
-        taxId: "0745559006509",
-        phone: "02-XXX-XXXX",
-        contactPerson: "ฝ่ายขาย"
-    },
-    // Add more known entities here if needed
-};
-
 // --- Helper: Mock Fallback (ใช้เมื่อไม่มี API Key) ---
 const mockBusinessLookup = async (query: string) => {
-    await new Promise(r => setTimeout(r, 1500)); // Simulate searching
+    await new Promise(r => setTimeout(r, 1000));
     return {
-        name: `บริษัท (จำลอง) สำหรับ ${query}`, 
-        address: `(กรุณาใส่ API Key เพื่อดึงข้อมูลจริง) 99/99 ถนนตัวอย่าง แขวงจำลอง กทม`,
-        taxId: /^\d+$/.test(query) ? query : Math.floor(Math.random() * 1000000000000).toString().padStart(13, '0'),
-        phone: '02-xxx-xxxx',
-        contactPerson: 'ฝ่ายขาย'
+        name: `(Simulation Mode) ไม่พบ API Key`, 
+        address: `กรุณาใส่ Gemini API Key ในหน้า Settings เพื่อค้นหาข้อมูลจริง`,
+        taxId: query,
+        phone: '-',
+        contactPerson: '-'
     };
 };
 
 // --- Helper: Real AI Lookup ---
 const fetchRealBusinessData = async (query: string, apiKey: string) => {
-    // 1. Check Known Database first (Fast & Accurate)
-    const cleanQuery = query.trim().replace(/-/g, '');
-    if (KNOWN_ENTITIES[cleanQuery]) {
-        await new Promise(r => setTimeout(r, 600)); // Small delay for UX
-        return KNOWN_ENTITIES[cleanQuery];
-    }
+    const cleanQuery = query.trim();
 
-    // 2. If no API Key, use mock
+    // 1. If no API Key, use mock with warning
     if (!apiKey) {
-        console.warn("No API Key provided. Using Mock data.");
-        return mockBusinessLookup(query);
+        return mockBusinessLookup(cleanQuery);
     }
 
-    // 3. AI Search
+    // 2. AI Search (Google Grounding)
     try {
         const ai = new GoogleGenAI({ apiKey });
-        // Specific prompt for Thai Business Data
+        
+        // Prompt Engineering: Specific Instructions for Thai Business Data
         const prompt = `
-            ค้นหาข้อมูลจดทะเบียนนิติบุคคลในประเทศไทย สำหรับคำค้น: "${query}"
+            Task: Find official business registration details in Thailand for: "${cleanQuery}".
             
-            แหล่งข้อมูลเป้าหมาย: กรมพัฒนาธุรกิจการค้า (DBD), Creden Data, Dataforthai, Corpus
+            Priority Sources: dataforthai.com, creden.co, dbd.go.th, corpus.
             
-            สิ่งที่ต้องดึงข้อมูล (Extract):
-            1. ชื่อบริษัทภาษาไทยที่ถูกต้อง (Company Name)
-            2. ที่อยู่สำนักงานใหญ่ (Address)
-            3. เลขประจำตัวผู้เสียภาษี 13 หลัก (Tax ID) - ถ้า query เป็นเลข ให้ใช้เลขนั้นยืนยัน
-            4. เบอร์โทรศัพท์ (Phone) - ถ้าหาไม่เจอให้เว้นว่าง
+            Extract the following fields strictly from the search results:
+            1. name: Registered Company Name (ชื่อนิติบุคคล ภาษาไทย)
+            2. address: Full Registered Address (ที่อยู่สำนักงานใหญ่ รวมถึง แขวง/ตำบล เขต/อำเภอ จังหวัด)
+            3. taxId: 13-digit Tax ID (เลขทะเบียนนิติบุคคล) - verify it matches "${cleanQuery}" if it is a number.
+            4. phone: Official Phone Number (if available, else empty string)
             
-            ตอบกลับเป็น JSON เท่านั้น
+            Response Format: JSON object matching the schema.
         `;
 
         const response = await ai.models.generateContent({
-            model: "gemini-3-pro-preview",
+            model: "gemini-3-flash-preview", // Flash is faster and reliable for search tools
             contents: prompt,
             config: {
-                tools: [{ googleSearch: {} }], // Enable Search
+                tools: [{ googleSearch: {} }], 
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.OBJECT,
@@ -99,19 +82,27 @@ const fetchRealBusinessData = async (query: string, apiKey: string) => {
         });
 
         const text = response.text;
-        if (!text) throw new Error("No response from AI");
+        if (!text) throw new Error("AI returned empty response");
         
         const data = JSON.parse(text);
-        // Fallback validation if AI returns generic "not found" text in name
-        if (!data.name || data.name.toLowerCase().includes("not found")) {
-            throw new Error("Data not found via AI");
+        
+        // Basic validation: If name is generic "Not Found", treat as error
+        if (data.name && (data.name.toLowerCase().includes("not found") || data.name.includes("ไม่พบ"))) {
+             throw new Error("AI could not find the entity");
         }
         
         return data;
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("AI Search Failed:", error);
-        return mockBusinessLookup(query);
+        // Return error details in the fields so user knows what happened
+        return {
+            name: `ไม่พบข้อมูลสำหรับ: ${cleanQuery}`,
+            address: `System Error: ${error.message || 'Search failed'}. กรุณาลองใหม่อีกครั้งหรือกรอกข้อมูลด้วยตนเอง`,
+            taxId: cleanQuery,
+            phone: '',
+            contactPerson: ''
+        };
     }
 };
 
@@ -182,6 +173,8 @@ const Purchasing: React.FC = () => {
   // --- ADD QUOTE MODAL STATE (IMPROVED) ---
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
   const [currentQuote, setCurrentQuote] = useState<Partial<FactoryQuotation>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isScanning, setIsScanning] = useState(false);
   
   // --- SUPPLIER LOOKUP STATE ---
   const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
@@ -315,6 +308,16 @@ const Purchasing: React.FC = () => {
       setIsQuoteModalOpen(true);
   };
 
+  const handleEditQuote = (quote: FactoryQuotation) => {
+      setCurrentQuote({ ...quote });
+      // Find and set temp supplier if we want to show details, 
+      // but usually editing implies changing price/terms.
+      // If user wants to change supplier, they can clear supplierId.
+      setTempSupplier(null);
+      setSupplierSearchTerm('');
+      setIsQuoteModalOpen(true);
+  };
+
   const handleCreateMaterial = async (name: string) => {
       const newId = generateId();
       const newMaterial: InventoryItem = {
@@ -378,10 +381,110 @@ const Purchasing: React.FC = () => {
       if (!currentQuote.supplierId) { alert("กรุณาระบุซัพพลายเออร์"); return; }
       if (!currentQuote.pricePerUnit) { alert("กรุณาระบุราคา"); return; }
       
-      const newQuote = currentQuote as FactoryQuotation;
-      const currentQuotes = factory_quotations || [];
-      await updateData({ ...data, factory_quotations: [...currentQuotes, newQuote] });
+      let updatedQuotes = [...factory_quotations];
+      const existingIdx = updatedQuotes.findIndex(q => q.id === currentQuote.id);
+      
+      if (existingIdx >= 0) {
+          updatedQuotes[existingIdx] = currentQuote as FactoryQuotation;
+      } else {
+          updatedQuotes.push(currentQuote as FactoryQuotation);
+      }
+
+      await updateData({ ...data, factory_quotations: updatedQuotes });
       setIsQuoteModalOpen(false);
+  };
+
+  // --- AI SCAN QUOTE (VISION) ---
+  const handleScanClick = () => {
+      fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!apiKey) {
+          alert("Please set Gemini API Key in Settings first.");
+          return;
+      }
+
+      setIsScanning(true);
+      try {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+              const base64Data = (reader.result as string).split(',')[1];
+              
+              const ai = new GoogleGenAI({ apiKey });
+              const prompt = `
+                  Analyze this quotation/invoice image. Extract the following information into a strict JSON format:
+                  1. supplier_name: Company Name
+                  2. tax_id: Tax Identification Number (if visible)
+                  3. address: Company Address
+                  4. phone: Contact Number
+                  5. item_name: The main material/product item being quoted
+                  6. price_per_unit: Unit Price (Number)
+                  7. unit: Unit (e.g., kg, pcs, set, ton)
+                  8. moq: Minimum Order Quantity (Number, default 0 if not found)
+                  9. payment_term: Credit term or payment condition
+                  10. lead_time_days: Delivery time in days (Number, default 7 if not found)
+
+                  Response must be valid JSON only.
+              `;
+
+              const response = await ai.models.generateContent({
+                  model: "gemini-3-flash-preview",
+                  contents: [
+                      {
+                          inlineData: {
+                              mimeType: file.type,
+                              data: base64Data
+                          }
+                      },
+                      { text: prompt }
+                  ],
+                  config: {
+                      responseMimeType: "application/json"
+                  }
+              });
+
+              const result = JSON.parse(response.text || "{}");
+              
+              // Map AI result to State
+              if (result.supplier_name) {
+                  setSupplierSearchTerm(result.supplier_name);
+                  // Prepare Temp Supplier incase user wants to save
+                  setTempSupplier({
+                      id: generateId(),
+                      name: result.supplier_name,
+                      taxId: result.tax_id || '',
+                      address: result.address || '',
+                      phone: result.phone || '',
+                      contactPerson: 'Sales'
+                  });
+              }
+
+              // Update Quote Details
+              setCurrentQuote(prev => ({
+                  ...prev,
+                  pricePerUnit: result.price_per_unit || prev.pricePerUnit,
+                  unit: result.unit || prev.unit || 'kg',
+                  moq: result.moq || prev.moq,
+                  paymentTerm: result.payment_term || prev.paymentTerm,
+                  leadTimeDays: result.lead_time_days || prev.leadTimeDays,
+                  note: `Scanned from document. Item: ${result.item_name}`
+              }));
+
+              // Attempt to auto-match material (Simple fuzzy or just notify user)
+              // Here we just notify via the note for now.
+          };
+          reader.readAsDataURL(file);
+      } catch (error) {
+          console.error("Scan failed:", error);
+          alert("Failed to scan document. Please try again.");
+      } finally {
+          setIsScanning(false);
+          // Reset file input
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
   };
 
   return (
@@ -481,6 +584,15 @@ const Purchasing: React.FC = () => {
                                                   {isFastest && <span className="bg-blue-500 text-white text-[10px] font-black px-2 py-1 rounded-lg uppercase shadow-sm flex items-center gap-1"><Truck size={12}/> Fastest</span>}
                                               </div>
                                           )}
+                                          
+                                          {/* Edit Button */}
+                                          <button 
+                                            onClick={() => handleEditQuote(quote)}
+                                            className="absolute top-4 right-4 text-slate-300 hover:text-blue-600 bg-white hover:bg-blue-50 p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                                          >
+                                              <Edit2 size={16}/>
+                                          </button>
+
                                           <div className="flex justify-between items-start mb-4 mt-2">
                                               <div>
                                                   <h4 className="font-black text-slate-800 text-lg">{supplier?.name}</h4>
@@ -649,7 +761,18 @@ const Purchasing: React.FC = () => {
                           <h3 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2"><Zap className="text-amber-500" fill="currentColor"/> บันทึกราคา (Smart Quote)</h3>
                           <p className="text-xs text-slate-500 font-bold mt-1">One-stop process for Materials & Suppliers</p>
                       </div>
-                      <button onClick={() => setIsQuoteModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={24}/></button>
+                      <div className="flex items-center gap-2">
+                          <button 
+                              onClick={handleScanClick}
+                              disabled={isScanning}
+                              className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md disabled:opacity-70"
+                          >
+                              {isScanning ? <Loader2 size={16} className="animate-spin"/> : <ScanLine size={16}/>}
+                              {isScanning ? 'กำลังสแกน...' : 'Scan Quote (AI)'}
+                          </button>
+                          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+                          <button onClick={() => setIsQuoteModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={24}/></button>
+                      </div>
                   </div>
                   
                   <div className="p-8 space-y-8 flex-1 overflow-y-auto custom-scrollbar">
@@ -720,21 +843,61 @@ const Purchasing: React.FC = () => {
                                       </div>
                                   )}
 
-                                  {/* Lookup Result Card */}
+                                  {/* Lookup Result Card (Editable) */}
                                   {tempSupplier && (
-                                      <div className="bg-white border-2 border-blue-100 rounded-xl p-4 animate-in slide-in-from-top-2">
-                                          <div className="flex justify-between items-start mb-2">
-                                              <span className="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded uppercase">Data Found</span>
+                                      <div className="bg-white border-2 border-blue-100 rounded-xl p-4 animate-in slide-in-from-top-2 relative">
+                                          <div className="flex justify-between items-start mb-3">
+                                              <span className="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                                  <Edit2 size={10}/> Data Found (Editable)
+                                              </span>
                                               <button onClick={() => setTempSupplier(null)} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
                                           </div>
-                                          <h4 className="font-black text-slate-800 text-lg">{tempSupplier.name}</h4>
-                                          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Building2 size={12}/> {tempSupplier.taxId || '-'}</p>
-                                          <p className="text-xs text-slate-500 mt-1">{tempSupplier.address}</p>
+                                          
+                                          {/* Editable Fields */}
+                                          <div className="space-y-3">
+                                              <input 
+                                                value={tempSupplier.name} 
+                                                onChange={e => setTempSupplier({...tempSupplier, name: e.target.value})}
+                                                className="w-full border-b border-slate-200 py-1 font-black text-slate-800 focus:border-blue-500 outline-none text-sm placeholder:text-slate-300"
+                                                placeholder="ชื่อบริษัท"
+                                              />
+                                              <div className="flex gap-2">
+                                                  <div className="flex-1 relative">
+                                                      <Building2 size={14} className="absolute left-0 top-2 text-slate-400"/>
+                                                      <input 
+                                                        value={tempSupplier.taxId} 
+                                                        onChange={e => setTempSupplier({...tempSupplier, taxId: e.target.value})}
+                                                        className="w-full pl-5 border-b border-slate-200 py-1 text-xs text-slate-600 focus:border-blue-500 outline-none"
+                                                        placeholder="เลขผู้เสียภาษี"
+                                                      />
+                                                  </div>
+                                                  <div className="flex-1 relative">
+                                                      <Phone size={14} className="absolute left-0 top-2 text-slate-400"/>
+                                                      <input 
+                                                        value={tempSupplier.phone} 
+                                                        onChange={e => setTempSupplier({...tempSupplier, phone: e.target.value})}
+                                                        className="w-full pl-5 border-b border-slate-200 py-1 text-xs text-slate-600 focus:border-blue-500 outline-none"
+                                                        placeholder="เบอร์โทร"
+                                                      />
+                                                  </div>
+                                              </div>
+                                              <div className="relative">
+                                                  <MapPin size={14} className="absolute left-0 top-2 text-slate-400"/>
+                                                  <textarea 
+                                                    rows={2}
+                                                    value={tempSupplier.address} 
+                                                    onChange={e => setTempSupplier({...tempSupplier, address: e.target.value})}
+                                                    className="w-full pl-5 border border-slate-200 rounded-lg p-2 text-xs text-slate-600 focus:border-blue-500 outline-none resize-none bg-slate-50/50"
+                                                    placeholder="ที่อยู่..."
+                                                  />
+                                              </div>
+                                          </div>
+
                                           <button 
                                               onClick={handleConfirmSupplier}
-                                              className="w-full mt-3 bg-blue-50 text-blue-700 py-2 rounded-lg font-bold text-xs hover:bg-blue-100 transition-all"
+                                              className="w-full mt-3 bg-blue-50 text-blue-700 py-2 rounded-lg font-bold text-xs hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
                                           >
-                                              ยืนยันและเลือกซัพพลายเออร์นี้
+                                              <Save size={14}/> ยืนยันข้อมูลนี้ (Save Supplier)
                                           </button>
                                       </div>
                                   )}

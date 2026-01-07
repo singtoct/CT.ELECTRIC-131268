@@ -5,14 +5,20 @@ import { useTranslation } from '../services/i18n';
 import { 
     Search, Trash2, Plus, Copy, Database, 
     FileSpreadsheet, CheckCircle, ChevronDown, Printer, X, QrCode, Tag,
-    Calculator, AlertTriangle, PackageCheck, ArrowRight, DollarSign
+    Calculator, AlertTriangle, PackageCheck, ArrowRight, DollarSign,
+    Edit, Info, Truck, Calendar, Layers, Save, Building2
 } from 'lucide-react';
 import { InventoryItem, Product, BOMItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
 
 const RawMaterialBOM: React.FC = () => {
     const data = useFactoryData();
-    const { factory_products = [], packing_raw_materials = [], factory_settings } = data;
+    const { 
+        factory_products = [], 
+        packing_raw_materials = [], 
+        factory_suppliers = [], // Need suppliers for source tracking
+        factory_settings 
+    } = data;
     const { updateData } = useFactoryActions();
     const { t } = useTranslation();
 
@@ -21,13 +27,17 @@ const RawMaterialBOM: React.FC = () => {
     const [selectedProductId, setSelectedProductId] = useState<string | null>(factory_products[0]?.id || null);
     
     // Simulation State
-    const [simulationQty, setSimulationQty] = useState<number>(1000); // Default simulation target
+    const [simulationQty, setSimulationQty] = useState<number>(1000); 
 
     const [localMaterials, setLocalMaterials] = useState<InventoryItem[]>([]);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
     // Sticker / Label State
     const [labelItem, setLabelItem] = useState<InventoryItem | null>(null);
+
+    // Edit / Detail Modal State
+    const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+    const [currentMaterial, setCurrentMaterial] = useState<InventoryItem | null>(null);
 
     useEffect(() => {
         setLocalMaterials(packing_raw_materials);
@@ -52,6 +62,10 @@ const RawMaterialBOM: React.FC = () => {
             subLabel: `Stock: ${m.quantity} ${m.unit}`
         }))
     , [packing_raw_materials]);
+
+    const supplierOptions = useMemo(() => 
+        factory_suppliers.map(s => ({ value: s.id, label: s.name }))
+    , [factory_suppliers]);
 
     // --- BOM Analysis Logic ---
     const bomAnalysis = useMemo(() => {
@@ -80,13 +94,62 @@ const RawMaterialBOM: React.FC = () => {
     }, [selectedProduct, packing_raw_materials]);
 
 
-    const handleLocalChange = (id: string, field: keyof InventoryItem, value: any) => {
+    // --- Actions ---
+
+    const handleOpenEdit = (item: InventoryItem) => {
+        setCurrentMaterial({ ...item });
+        setIsMaterialModalOpen(true);
+    };
+
+    const handleCreateNewMaterial = () => {
+        setCurrentMaterial({
+            id: Math.random().toString(36).substr(2, 9),
+            name: '',
+            quantity: 0,
+            unit: 'kg',
+            costPerUnit: 0,
+            category: 'Raw Material',
+            source: 'Purchased',
+            isoStatus: 'Released',
+            receivedDate: new Date().toISOString().split('T')[0]
+        });
+        setIsMaterialModalOpen(true);
+    };
+
+    const handleDeleteMaterial = async (id: string) => {
+        if(!confirm("ยืนยันการลบวัตถุดิบนี้? ข้อมูลที่ผูกกับสูตรผลิต (BOM) อาจได้รับผลกระทบ")) return;
+        const updated = packing_raw_materials.filter(m => m.id !== id);
+        await updateData({ ...data, packing_raw_materials: updated });
+    };
+
+    const handleSaveMaterial = async () => {
+        if (!currentMaterial || !currentMaterial.name) {
+            alert("กรุณาระบุชื่อวัตถุดิบ");
+            return;
+        }
+
+        let updatedMaterials = [...packing_raw_materials];
+        const idx = updatedMaterials.findIndex(m => m.id === currentMaterial.id);
+        
+        if (idx >= 0) {
+            updatedMaterials[idx] = currentMaterial;
+        } else {
+            updatedMaterials.push(currentMaterial);
+        }
+
+        await updateData({ ...data, packing_raw_materials: updatedMaterials });
+        setIsMaterialModalOpen(false);
+        setCurrentMaterial(null);
+    };
+
+    // Keep inline edit for simple quantity adjustments
+    const handleInlineChange = (id: string, field: keyof InventoryItem, value: any) => {
         setLocalMaterials(prev => prev.map(item => 
             item.id === id ? { ...item, [field]: value } : item
         ));
     };
 
-    const saveChanges = async () => {
+    const saveInlineChanges = async () => {
         await updateData({ ...data, packing_raw_materials: localMaterials });
     };
 
@@ -142,7 +205,7 @@ const RawMaterialBOM: React.FC = () => {
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                             <input type="text" placeholder="ค้นหาวัตถุดิบในคลัง..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputBase.replace('px-4 py-2.5', 'pl-12 pr-6 py-3')} />
                          </div>
-                         <button className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-slate-900 transition-all"><Plus size={18}/> เพิ่มรายการใหม่</button>
+                         <button onClick={handleCreateNewMaterial} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-slate-900 transition-all"><Plus size={18}/> เพิ่มรายการใหม่</button>
                     </div>
                     <div className="overflow-x-auto flex-1">
                         <table className="w-full text-sm text-left">
@@ -153,31 +216,58 @@ const RawMaterialBOM: React.FC = () => {
                                     <th className="px-6 py-5 w-40 text-center">จำนวนคงเหลือ</th>
                                     <th className="px-6 py-5 w-24 text-center">หน่วย</th>
                                     <th className="px-8 py-5 w-40 text-right">ต้นทุน/หน่วย</th>
-                                    <th className="px-6 py-5 text-center">Sticker</th>
+                                    <th className="px-6 py-5 text-center">จัดการ (Actions)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredMaterials.map(m => (
-                                    <tr key={m.id} className="hover:bg-slate-50/50 transition-colors group">
-                                        <td className="px-8 py-4"><input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => setSelectedIds(prev => prev.includes(m.id) ? prev.filter(i=>i!==m.id) : [...prev, m.id])} className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500" /></td>
-                                        <td className="px-6 py-4 font-black text-slate-700 text-base">
-                                            {m.name}
-                                            <div className="text-[10px] text-slate-400 font-mono mt-0.5 font-normal">{m.id}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center"><input type="number" value={m.quantity} onChange={(e) => handleLocalChange(m.id, 'quantity', parseFloat(e.target.value))} onBlur={saveChanges} className={tableInput} /></td>
-                                        <td className="px-6 py-4 text-center font-black text-slate-400">{m.unit}</td>
-                                        <td className="px-8 py-4 text-right font-mono font-black text-slate-800 text-lg">฿{(m.costPerUnit || 0).toFixed(2)}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            <button 
-                                                onClick={() => setLabelItem(m)}
-                                                className="p-2 bg-slate-100 text-slate-500 hover:bg-slate-800 hover:text-white rounded-xl transition-all shadow-sm"
-                                                title="Print Sticker"
-                                            >
-                                                <Printer size={18}/>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {filteredMaterials.map(m => {
+                                    // Resolve Supplier Name
+                                    const supplierName = factory_suppliers.find(s => s.id === m.defaultSupplierId)?.name || 'Unknown Supplier';
+                                    
+                                    return (
+                                        <tr key={m.id} className="hover:bg-slate-50/50 transition-colors group">
+                                            <td className="px-8 py-4"><input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => setSelectedIds(prev => prev.includes(m.id) ? prev.filter(i=>i!==m.id) : [...prev, m.id])} className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500" /></td>
+                                            <td className="px-6 py-4">
+                                                <div className="font-black text-slate-800 text-base">{m.name}</div>
+                                                {/* Source info preview */}
+                                                <div className="flex items-center gap-3 mt-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                    <span className="flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                        <Truck size={10}/> {supplierName}
+                                                    </span>
+                                                    {m.lotNumber && (
+                                                        <span className="flex items-center gap-1 text-[9px] font-bold text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                                            <Tag size={10}/> LOT: {m.lotNumber}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <input 
+                                                    type="number" 
+                                                    value={m.quantity} 
+                                                    onChange={(e) => handleInlineChange(m.id, 'quantity', parseFloat(e.target.value))} 
+                                                    onBlur={saveInlineChanges} 
+                                                    className={tableInput} 
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4 text-center font-black text-slate-400">{m.unit}</td>
+                                            <td className="px-8 py-4 text-right font-mono font-black text-slate-800 text-lg">฿{(m.costPerUnit || 0).toFixed(2)}</td>
+                                            <td className="px-6 py-4 text-center">
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <button onClick={() => handleOpenEdit(m)} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all" title="Edit / Details">
+                                                        <Edit size={16}/>
+                                                    </button>
+                                                    <button onClick={() => setLabelItem(m)} className="p-2 bg-slate-100 text-slate-500 hover:bg-slate-800 hover:text-white rounded-lg transition-all" title="Print Sticker">
+                                                        <Printer size={16}/>
+                                                    </button>
+                                                    <button onClick={() => handleDeleteMaterial(m.id)} className="p-2 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-all" title="Delete">
+                                                        <Trash2 size={16}/>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -388,7 +478,7 @@ const RawMaterialBOM: React.FC = () => {
                 </div>
             )}
 
-            {/* Sticker Print Modal */}
+            {/* Sticker Print Modal (Existing) */}
             {labelItem && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in no-print">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in">
@@ -456,6 +546,160 @@ const RawMaterialBOM: React.FC = () => {
                             <button onClick={() => setLabelItem(null)} className="px-6 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancel</button>
                             <button onClick={() => window.print()} className="px-8 py-3 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-black transition-all flex items-center gap-2">
                                 <Printer size={20}/> Print Label
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- ADD/EDIT MATERIAL MODAL --- */}
+            {isMaterialModalOpen && currentMaterial && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200 no-print">
+                    <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col h-[85vh]">
+                        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div>
+                                <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                                    {currentMaterial.id ? 'รายละเอียดวัตถุดิบ (Material Details)' : 'เพิ่มรายการวัตถุดิบใหม่'}
+                                </h3>
+                                <p className="text-xs text-slate-500 font-bold mt-1">ข้อมูลที่มาและการจัดเก็บ</p>
+                            </div>
+                            <button onClick={() => setIsMaterialModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-all"><X size={24}/></button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                            {/* General Info */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Layers size={14}/> ข้อมูลทั่วไป</h4>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">ชื่อวัตถุดิบ <span className="text-red-500">*</span></label>
+                                    <input 
+                                        type="text" 
+                                        value={currentMaterial.name} 
+                                        onChange={e => setCurrentMaterial({...currentMaterial, name: e.target.value})} 
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="เช่น เม็ด PC ใส, สีผงขาว..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">หมวดหมู่</label>
+                                    <select 
+                                        value={currentMaterial.category || 'Raw Material'} 
+                                        onChange={e => setCurrentMaterial({...currentMaterial, category: e.target.value})}
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 bg-white"
+                                    >
+                                        <option value="Raw Material">Raw Material (วัตถุดิบหลัก)</option>
+                                        <option value="Component">Component (ชิ้นส่วนประกอบ)</option>
+                                        <option value="Packaging">Packaging (บรรจุภัณฑ์)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100"/>
+
+                            {/* Source Tracking */}
+                            <div className="space-y-4 bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                                <h4 className="text-xs font-black text-blue-500 uppercase tracking-widest flex items-center gap-2"><Truck size={14}/> ที่มาและแหล่งจัดหา (Origin)</h4>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">ซัพพลายเออร์หลัก (Default Supplier)</label>
+                                    <SearchableSelect 
+                                        options={supplierOptions}
+                                        value={currentMaterial.defaultSupplierId}
+                                        onChange={(val) => setCurrentMaterial({...currentMaterial, defaultSupplierId: val})}
+                                        placeholder="ระบุ Supplier..."
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Lot Number</label>
+                                        <input 
+                                            type="text" 
+                                            value={currentMaterial.lotNumber || ''} 
+                                            onChange={e => setCurrentMaterial({...currentMaterial, lotNumber: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 bg-white"
+                                            placeholder="LOT-XXXX"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">วันที่รับของ</label>
+                                        <input 
+                                            type="date" 
+                                            value={currentMaterial.receivedDate || ''} 
+                                            onChange={e => setCurrentMaterial({...currentMaterial, receivedDate: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 bg-white"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Inventory Data */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Database size={14}/> ข้อมูลคลังและต้นทุน</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">จำนวนคงเหลือ</label>
+                                        <input 
+                                            type="number" 
+                                            value={currentMaterial.quantity} 
+                                            onChange={e => setCurrentMaterial({...currentMaterial, quantity: parseFloat(e.target.value) || 0})} 
+                                            className="w-full px-4 py-3 border border-slate-200 rounded-xl font-black text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none text-lg"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">หน่วยนับ</label>
+                                        <input 
+                                            type="text" 
+                                            value={currentMaterial.unit} 
+                                            onChange={e => setCurrentMaterial({...currentMaterial, unit: e.target.value})} 
+                                            className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                            placeholder="kg, pcs, set"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">ต้นทุนต่อหน่วย (฿)</label>
+                                        <input 
+                                            type="number" 
+                                            value={currentMaterial.costPerUnit || 0} 
+                                            onChange={e => setCurrentMaterial({...currentMaterial, costPerUnit: parseFloat(e.target.value) || 0})} 
+                                            className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">จุดสั่งซื้อ (Min Level)</label>
+                                        <input 
+                                            type="number" 
+                                            // Assuming reservedQuantity is treated as min level for now or add a new field if needed
+                                            value={currentMaterial.reservedQuantity || 0} 
+                                            onChange={e => setCurrentMaterial({...currentMaterial, reservedQuantity: parseFloat(e.target.value) || 0})} 
+                                            className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                            placeholder="แจ้งเตือนเมื่อต่ำกว่า"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ISO Status */}
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">สถานะคุณภาพ (ISO/QC)</label>
+                                <select 
+                                    value={currentMaterial.isoStatus || 'Released'} 
+                                    onChange={e => setCurrentMaterial({...currentMaterial, isoStatus: e.target.value as any})}
+                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 bg-white"
+                                >
+                                    <option value="Released">Released (ผ่าน - พร้อมใช้)</option>
+                                    <option value="Quarantine">Quarantine (รอตรวจสอบ)</option>
+                                    <option value="Hold">Hold (กักกัน)</option>
+                                    <option value="Rejected">Rejected (ไม่ผ่าน)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={() => setIsMaterialModalOpen(false)} className="px-6 py-3 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all">ยกเลิก</button>
+                            <button onClick={handleSaveMaterial} className="px-8 py-3 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-black transition-all flex items-center gap-2 active:scale-95">
+                                <Save size={18}/> บันทึกข้อมูล
                             </button>
                         </div>
                     </div>
