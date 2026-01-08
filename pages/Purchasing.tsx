@@ -1,996 +1,676 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useFactoryData, useFactoryActions, useApiKey } from '../App';
 import { useTranslation } from '../services/i18n';
 import { useLocation } from 'react-router-dom';
 import { 
-    Plus, Search, ShoppingCart, Truck, CheckCircle2, 
-    X, Edit2, Trash2, Printer, ChevronDown, Package,
-    DollarSign, Calendar, Factory, ChevronLeft, ChevronRight,
-    BarChart3, List, PieChart as PieIcon, TrendingUp, Scale, Clock, Star,
-    AlertCircle, ArrowRight, FileCheck, ClipboardCheck, ScanLine, Loader2,
-    Building2, Globe, Sparkles, Filter, Save, Zap, Key, MapPin, Phone, Upload, FileText
+    ShoppingCart, Plus, Search, Filter, 
+    FileText, CheckCircle2, AlertCircle, Trash2, 
+    DollarSign, TrendingDown, Package, Sparkles, 
+    Loader2, MapPin, Phone, Mail, X, Save,
+    Truck, BarChart3, ArrowRight, Upload, ScanLine, FileType, FileImage
 } from 'lucide-react';
-import { FactoryPurchaseOrder, PurchaseOrderItem, FactorySupplier, FactoryQuotation, InventoryItem } from '../types';
+import { FactoryPurchaseOrder, FactoryQuotation, FactorySupplier, InventoryItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
-import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-    PieChart, Pie, Cell, Legend, LineChart, Line 
-} from 'recharts';
 import { GoogleGenAI, Type } from "@google/genai";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
-const ITEMS_PER_PAGE = 10;
-const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899'];
-
-// --- Helper: Mock Fallback (ใช้เมื่อไม่มี API Key) ---
-const mockBusinessLookup = async (query: string) => {
-    await new Promise(r => setTimeout(r, 1000));
-    return {
-        name: `(Simulation Mode) ไม่พบ API Key`, 
-        address: `กรุณาใส่ Gemini API Key ในหน้า Settings เพื่อค้นหาข้อมูลจริง`,
-        taxId: query,
-        phone: '-',
-        contactPerson: '-'
-    };
-};
-
-// --- Helper: Real AI Lookup ---
-const fetchRealBusinessData = async (query: string, apiKey: string) => {
-    const cleanQuery = query.trim();
-
-    // 1. If no API Key, use mock with warning
-    if (!apiKey) {
-        return mockBusinessLookup(cleanQuery);
-    }
-
-    // 2. AI Search (Google Grounding)
-    try {
-        const ai = new GoogleGenAI({ apiKey });
-        
-        // Prompt Engineering: Specific Instructions for Thai Business Data
-        const prompt = `
-            Task: Find official business registration details in Thailand for: "${cleanQuery}".
-            
-            Priority Sources: dataforthai.com, creden.co, dbd.go.th, corpus.
-            
-            Extract the following fields strictly from the search results:
-            1. name: Registered Company Name (ชื่อนิติบุคคล ภาษาไทย)
-            2. address: Full Registered Address (ที่อยู่สำนักงานใหญ่ รวมถึง แขวง/ตำบล เขต/อำเภอ จังหวัด)
-            3. taxId: 13-digit Tax ID (เลขทะเบียนนิติบุคคล) - verify it matches "${cleanQuery}" if it is a number.
-            4. phone: Official Phone Number (if available, else empty string)
-            
-            Response Format: JSON object matching the schema.
-        `;
-
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview", // Flash is faster and reliable for search tools
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }], 
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        name: { type: Type.STRING },
-                        address: { type: Type.STRING },
-                        taxId: { type: Type.STRING },
-                        phone: { type: Type.STRING },
-                        contactPerson: { type: Type.STRING }
-                    }
-                }
-            }
-        });
-
-        const text = response.text;
-        if (!text) throw new Error("AI returned empty response");
-        
-        const data = JSON.parse(text);
-        
-        // Basic validation: If name is generic "Not Found", treat as error
-        if (data.name && (data.name.toLowerCase().includes("not found") || data.name.includes("ไม่พบ"))) {
-             throw new Error("AI could not find the entity");
-        }
-        
-        return data;
-
-    } catch (error: any) {
-        console.error("AI Search Failed:", error);
-        
-        let errorMessage = "ไม่พบข้อมูล กรุณากรอกด้วยตนเอง";
-        const errorStr = JSON.stringify(error) + (error.message || "");
-
-        // Detect Quota Exceeded (429)
-        if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota")) {
-            errorMessage = "⚠️ โควต้า AI เต็ม (Quota Exceeded) กรุณารอสักครู่หรือกรอกเอง";
-        } 
-        // Detect API Key issues
-        else if (errorStr.includes("API_KEY") || errorStr.includes("PERMISSION_DENIED")) {
-            errorMessage = "⚠️ API Key ไม่ถูกต้องหรือถูกระงับ";
-        }
-
-        // Return the entered query as the name so the user doesn't have to retype, and show error in address
-        return {
-            name: cleanQuery, 
-            address: errorMessage,
-            taxId: '',
-            phone: '',
-            contactPerson: ''
-        };
-    }
-};
-
-// Restock Assistant Component
-const RestockAssistant = ({ materials, onCreatePO }: { materials: InventoryItem[], onCreatePO: (item: InventoryItem) => void }) => {
-    const { t } = useTranslation();
-    // Improved Logic: Use item's specific Min Level (reservedQuantity) if set, otherwise default to 100
-    const lowStockItems = materials.filter(m => (m.quantity || 0) < (m.reservedQuantity || 100)); 
-
-    if (lowStockItems.length === 0) return null;
-
-    return (
-        <div className="bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200 rounded-2xl p-4 mb-6 flex flex-col lg:flex-row items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-4 gap-4">
-            <div className="flex items-center gap-4 shrink-0 w-full lg:w-auto">
-                <div className="bg-orange-500 text-white p-3 rounded-xl shadow-lg shadow-orange-200">
-                    <AlertCircle size={24} />
-                </div>
-                <div>
-                    <h3 className="font-black text-orange-900 text-lg whitespace-nowrap">{t('pur.smartRestock')}</h3>
-                    <p className="text-orange-700 text-xs font-bold">{lowStockItems.length} {t('pur.lowStockAlert')}</p>
-                </div>
-            </div>
-            
-            {/* Added min-w-0 to allow flex child to shrink properly and show scrollbar */}
-            <div className="flex-1 w-full lg:w-auto min-w-0">
-                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar items-center px-1">
-                    {lowStockItems.slice(0, 4).map(item => (
-                        <div key={item.id} className="bg-white p-3 rounded-xl border border-orange-100 flex items-center gap-3 min-w-[200px] max-w-[240px] shadow-sm shrink-0 hover:shadow-md transition-shadow">
-                            <div className="flex-1 min-w-0">
-                                <div className="font-bold text-slate-800 text-xs truncate" title={item.name}>{item.name}</div>
-                                <div className="text-red-500 text-[10px] font-black">{item.quantity} {item.unit} left</div>
-                            </div>
-                            <button onClick={() => onCreatePO(item)} className="p-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors shrink-0">
-                                <Plus size={14}/>
-                            </button>
-                        </div>
-                    ))}
-                    {lowStockItems.length > 4 && (
-                        <div className="flex flex-col items-center justify-center bg-white/60 border border-orange-100/50 rounded-xl px-4 h-[58px] min-w-[100px] text-orange-800 font-bold text-xs whitespace-nowrap shrink-0">
-                            <span className="text-lg font-black">+{lowStockItems.length - 4}</span>
-                            <span className="text-[9px] uppercase">items</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const Purchasing: React.FC = () => {
-  const data = useFactoryData();
-  const { 
-      factory_purchase_orders = [], 
-      factory_suppliers = [], 
-      packing_raw_materials = [],
-      factory_quotations = [],
-      factory_settings
-  } = data;
-  const { updateData } = useFactoryActions();
-  const { t } = useTranslation();
-  const { apiKey } = useApiKey();
-  const location = useLocation();
+    const data = useFactoryData();
+    const { 
+        factory_purchase_orders = [], 
+        factory_quotations = [],
+        factory_suppliers = [],
+        packing_raw_materials = []
+    } = data;
+    const { updateData } = useFactoryActions();
+    const { t } = useTranslation();
+    const { apiKey } = useApiKey();
+    const location = useLocation();
 
-  const [view, setView] = useState<'list' | 'analytics' | 'rfq'>('list');
-  const [search, setSearch] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentPO, setCurrentPO] = useState<FactoryPurchaseOrder | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [activeTab, setActiveTab] = useState<'po' | 'rfq' | 'restock'>('po');
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    // Modal State
+    const [isPOModalOpen, setIsPOModalOpen] = useState(false);
+    const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
+    
+    // Forms
+    const [currentPO, setCurrentPO] = useState<Partial<FactoryPurchaseOrder>>({});
+    const [currentQuote, setCurrentQuote] = useState<Partial<FactoryQuotation>>({});
 
-  // --- RFQ State ---
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
-  const [materialSearch, setMaterialSearch] = useState(''); 
-  
-  // --- ADD QUOTE MODAL STATE (IMPROVED) ---
-  const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
-  const [currentQuote, setCurrentQuote] = useState<Partial<FactoryQuotation>>({});
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  
-  // --- SUPPLIER LOOKUP STATE ---
-  const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
-  const [isLookupLoading, setIsLookupLoading] = useState(false);
-  const [tempSupplier, setTempSupplier] = useState<Partial<FactorySupplier> | null>(null);
+    // Smart Supplier Lookup State
+    const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
+    const [isLookupLoading, setIsLookupLoading] = useState(false);
+    const [tempSupplier, setTempSupplier] = useState<Partial<FactorySupplier> | null>(null);
 
-  // --- EFFECT: Handle Shortage Navigation from Production Docs ---
-  useEffect(() => {
-      if (location.state && location.state.shortageItems) {
-          const { shortageItems, fromDoc } = location.state;
-          const poItems = shortageItems.map((s: any) => {
-              // Try to find default supplier or best quote for this material
-              const mat = packing_raw_materials.find(m => m.id === s.id);
-              return {
-                  rawMaterialId: s.id,
-                  quantity: s.missingQty,
-                  unitPrice: mat?.costPerUnit || 0
-              };
-          });
+    // Document Scanner State
+    const [isScanLoading, setIsScanLoading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-          // Auto-select supplier if all items have same default supplier
-          let defaultSup = '';
-          const firstMat = packing_raw_materials.find(m => m.id === shortageItems[0].id);
-          if (firstMat?.defaultSupplierId) defaultSup = firstMat.defaultSupplierId;
-
-          setCurrentPO({
-              id: generateId(),
-              poNumber: `PO-${new Date().getFullYear()}${String(factory_purchase_orders.length + 1).padStart(3, '0')}`,
-              orderDate: new Date().toISOString().split('T')[0],
-              expectedDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +3 days
-              supplierId: defaultSup || factory_suppliers[0]?.id || '',
-              status: 'Pending',
-              items: poItems,
-              // linkedProductionDocId: fromDoc // Optional linkage
-          });
-          setIsModalOpen(true);
-          // Clear history state to prevent reopening on refresh
-          window.history.replaceState({}, document.title);
-      }
-  }, [location.state, packing_raw_materials, factory_suppliers]);
-
-  // --- ANALYTICS LOGIC ---
-  const analyticsData = useMemo(() => {
-    // ... (Existing Analytics Logic remains same)
-    const validPOs = factory_purchase_orders.filter(po => {
-        const poYear = new Date(po.orderDate).getFullYear();
-        return poYear === selectedYear && po.status !== 'Cancelled';
-    });
-
-    let totalSpend = 0;
-    let totalItemsCount = 0;
-    const materialStats: Record<string, { name: string, quantity: number, cost: number, unit: string }> = {};
-    const supplierStats: Record<string, { name: string, count: number, value: number }> = {};
-    const monthlySpend = Array(12).fill(0).map((_, i) => ({ name: new Date(0, i).toLocaleString('en-US', { month: 'short' }), value: 0 }));
-
-    validPOs.forEach(po => {
-        const month = new Date(po.orderDate).getMonth();
-        let poTotal = 0;
-
-        po.items.forEach(item => {
-            const cost = item.quantity * item.unitPrice;
-            poTotal += cost;
-            totalItemsCount += item.quantity;
-
-            if (!materialStats[item.rawMaterialId]) {
-                const mat = packing_raw_materials.find(m => m.id === item.rawMaterialId);
-                materialStats[item.rawMaterialId] = {
-                    name: mat?.name || 'Unknown',
-                    quantity: 0,
-                    cost: 0,
-                    unit: mat?.unit || 'unit'
-                };
-            }
-            materialStats[item.rawMaterialId].quantity += item.quantity;
-            materialStats[item.rawMaterialId].cost += cost;
-        });
-
-        if (!supplierStats[po.supplierId]) {
-            const sup = factory_suppliers.find(s => s.id === po.supplierId);
-            supplierStats[po.supplierId] = { name: sup?.name || 'Unknown', count: 0, value: 0 };
+    // Initial Load: Handle Navigation State (from ProductionDocs)
+    useEffect(() => {
+        if (location.state && location.state.shortageItems) {
+            const { shortageItems, fromDoc } = location.state;
+            setCurrentPO({
+                id: generateId(),
+                poNumber: `PO-${new Date().getFullYear()}${String(factory_purchase_orders.length + 1).padStart(3, '0')}`,
+                orderDate: new Date().toISOString().split('T')[0],
+                status: 'Pending',
+                items: shortageItems.map((item: any) => ({
+                    rawMaterialId: item.id,
+                    quantity: item.missingQty,
+                    unitPrice: 0
+                })),
+                linkedProductionDocId: fromDoc
+            });
+            setIsPOModalOpen(true);
+            setActiveTab('po');
+            // Clear state history
+            window.history.replaceState({}, document.title);
         }
-        supplierStats[po.supplierId].count += 1;
-        supplierStats[po.supplierId].value += poTotal;
+    }, [location.state, factory_purchase_orders.length]);
 
-        monthlySpend[month].value += poTotal;
-        totalSpend += poTotal;
-    });
+    // --- Helpers ---
+    const supplierOptions = useMemo(() => 
+        factory_suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))
+    , [factory_suppliers]);
 
-    const topMaterials = Object.values(materialStats).sort((a, b) => b.cost - a.cost);
-    const topSuppliers = Object.values(supplierStats).sort((a, b) => b.value - a.value).map(s => ({ name: s.name, value: s.value }));
+    const materialOptions = useMemo(() => 
+        packing_raw_materials.map(m => ({ value: m.id, label: m.name, subLabel: `Stock: ${m.quantity} ${m.unit}` }))
+    , [packing_raw_materials]);
 
-    return { totalSpend, totalPO: validPOs.length, totalItemsCount, topMaterials, topSuppliers, monthlySpend };
-  }, [factory_purchase_orders, selectedYear, packing_raw_materials, factory_suppliers]);
+    // --- Actions ---
 
-  const filteredPOs = useMemo(() => {
-    return factory_purchase_orders.filter(po => 
-        po.poNumber.toLowerCase().includes(search.toLowerCase()) ||
-        factory_suppliers.find(s => s.id === po.supplierId)?.name.toLowerCase().includes(search.toLowerCase())
-    ).sort((a, b) => b.orderDate.localeCompare(a.orderDate));
-  }, [factory_purchase_orders, factory_suppliers, search]);
+    // 1. File Scanner (OCR) - Supports PDF & Images
+    const handleScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!apiKey) {
+            alert("กรุณาตั้งค่า API Key ในหน้า Settings ก่อนใช้งานฟีเจอร์สแกน");
+            return;
+        }
 
-  const totalPages = Math.ceil(filteredPOs.length / ITEMS_PER_PAGE);
-  const paginatedPOs = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredPOs.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredPOs, currentPage]);
+        setIsScanLoading(true);
+        try {
+            // Convert file to Base64
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async () => {
+                const base64Data = (reader.result as string).split(',')[1];
+                const mimeType = file.type;
 
-  const supplierOptions = useMemo(() => 
-    factory_suppliers.map(s => ({ value: s.id, label: s.name }))
-  , [factory_suppliers]);
+                const ai = new GoogleGenAI({ apiKey });
+                const prompt = `
+                    Analyze this quotation/invoice document (Image or PDF).
+                    Extract the following details (Thai/English supported):
+                    1. Supplier Name (Company Name)
+                    2. Product Details: Find the main raw material or item listed.
+                    3. Price Per Unit: Extract the numeric value.
+                    4. Unit: e.g., kg, pcs, set.
+                    
+                    Return JSON:
+                    {
+                        "supplierName": string,
+                        "productName": string,
+                        "pricePerUnit": number,
+                        "unit": string
+                    }
+                `;
 
-  const materialOptions = useMemo(() => 
-    packing_raw_materials.map(m => ({ value: m.id, label: m.name, subLabel: `${m.quantity} ${m.unit} in stock` }))
-  , [packing_raw_materials]);
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: [
+                        { inlineData: { mimeType: mimeType, data: base64Data } },
+                        { text: prompt }
+                    ],
+                    config: {
+                        responseMimeType: "application/json"
+                    }
+                });
 
-  // --- ACTIONS ---
+                if (response.text) {
+                    const result = JSON.parse(response.text);
+                    console.log("Scan Result:", result);
+                    
+                    // Auto-fill Logic
+                    let updates: any = {};
+                    
+                    // 1. Price & Unit
+                    if (result.pricePerUnit) updates.pricePerUnit = result.pricePerUnit;
+                    if (result.unit) updates.unit = result.unit;
 
-  const handleCreateNew = (prefillMaterial?: InventoryItem) => {
-    setCurrentPO({ 
-        id: generateId(), 
-        poNumber: `PUR-${new Date().getFullYear()}${String(factory_purchase_orders.length + 1).padStart(3, '0')}`, 
-        orderDate: new Date().toISOString().split('T')[0], 
-        expectedDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
-        supplierId: factory_suppliers[0]?.id || '', 
-        status: 'Pending', 
-        items: [{ rawMaterialId: prefillMaterial?.id || '', quantity: 0, unitPrice: prefillMaterial?.costPerUnit || 0 }] 
-    });
-    setIsModalOpen(true);
-  };
+                    // 2. Try to match Supplier
+                    if (result.supplierName) {
+                        const existingSup = factory_suppliers.find(s => 
+                            s.name.toLowerCase().includes(result.supplierName.toLowerCase())
+                        );
+                        if (existingSup) {
+                            updates.supplierId = existingSup.id;
+                        } else {
+                            // Prepare for smart lookup if new
+                            setSupplierSearchTerm(result.supplierName);
+                        }
+                    }
 
-  const handleSavePO = async () => {
-    if (!currentPO) return;
-    
-    let updatedPOs = [...factory_purchase_orders];
-    const idx = updatedPOs.findIndex(p => p.id === currentPO.id);
-    if (idx >= 0) updatedPOs[idx] = currentPO;
-    else updatedPOs.push(currentPO);
+                    // 3. Try to match Material
+                    if (result.productName) {
+                        const existingMat = packing_raw_materials.find(m => 
+                            m.name.toLowerCase().includes(result.productName.toLowerCase())
+                        );
+                        if (existingMat) {
+                            updates.rawMaterialId = existingMat.id;
+                        }
+                    }
 
-    // If PO is marked 'Received', update inventory
-    if (currentPO.status === 'Received') {
-        const updatedMaterials = [...packing_raw_materials];
-        currentPO.items.forEach(item => {
-            const matIndex = updatedMaterials.findIndex(m => m.id === item.rawMaterialId);
-            if (matIndex >= 0) {
-                updatedMaterials[matIndex] = {
-                    ...updatedMaterials[matIndex],
-                    quantity: (updatedMaterials[matIndex].quantity || 0) + item.quantity
-                };
+                    setCurrentQuote(prev => ({ ...prev, ...updates }));
+                }
+            };
+        } catch (error) {
+            console.error("Scan Error", error);
+            alert("ไม่สามารถสแกนเอกสารได้ กรุณาลองใหม่อีกครั้ง หรือตรวจสอบไฟล์");
+        } finally {
+            setIsScanLoading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    // 2. Business Entity Lookup
+    const handleSmartSupplierLookup = async (manualTerm?: string) => {
+        const term = manualTerm || supplierSearchTerm;
+        if (!term || !apiKey) {
+            if (!apiKey) alert("Please set API Key in Settings first.");
+            return;
+        }
+        setIsLookupLoading(true);
+        try {
+            const ai = new GoogleGenAI({ apiKey });
+            const prompt = `Find business details for a supplier company named "${term}" in Thailand. 
+            Return a JSON object with: name (string), address (string), phone (string), taxId (string).
+            If exact details not found, try to infer plausible data or return generic placeholders but in valid format.`;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            address: { type: Type.STRING },
+                            phone: { type: Type.STRING },
+                            taxId: { type: Type.STRING }
+                        }
+                    }
+                }
+            });
+
+            if (response.text) {
+                const result = JSON.parse(response.text);
+                setTempSupplier(result);
             }
-        });
-        await updateData({ ...data, factory_purchase_orders: updatedPOs, packing_raw_materials: updatedMaterials });
-    } else {
+        } catch (error) {
+            console.error("AI Lookup Error", error);
+            alert("Failed to lookup supplier. Check network or API key.");
+        } finally {
+            setIsLookupLoading(false);
+        }
+    };
+
+    const handleConfirmSupplier = async () => {
+        if (!tempSupplier) return;
+        
+        // Add to factory_suppliers
+        const newSupplier: FactorySupplier = {
+            id: generateId(),
+            name: tempSupplier.name || supplierSearchTerm,
+            address: tempSupplier.address || '',
+            phone: tempSupplier.phone || '',
+            taxId: tempSupplier.taxId,
+            contactPerson: 'General Contact'
+        };
+
+        const updatedSuppliers = [...factory_suppliers, newSupplier];
+        await updateData({ ...data, factory_suppliers: updatedSuppliers });
+        
+        // Auto-select in current form
+        if (isQuoteModalOpen) {
+            setCurrentQuote(prev => ({ ...prev, supplierId: newSupplier.id }));
+        } else if (isPOModalOpen) {
+            setCurrentPO(prev => ({ ...prev, supplierId: newSupplier.id }));
+        }
+
+        setTempSupplier(null);
+        setSupplierSearchTerm('');
+    };
+
+    const handleSaveQuote = async () => {
+        if (!currentQuote.rawMaterialId || !currentQuote.supplierId || !currentQuote.pricePerUnit) {
+            alert("Please fill all required fields.");
+            return;
+        }
+        
+        const payload: FactoryQuotation = {
+            id: currentQuote.id || generateId(),
+            rawMaterialId: currentQuote.rawMaterialId,
+            supplierId: currentQuote.supplierId,
+            pricePerUnit: currentQuote.pricePerUnit,
+            moq: currentQuote.moq || 0,
+            unit: currentQuote.unit || 'unit',
+            leadTimeDays: currentQuote.leadTimeDays || 0,
+            paymentTerm: currentQuote.paymentTerm || 'Cash',
+            quotationDate: currentQuote.quotationDate || new Date().toISOString().split('T')[0],
+            validUntil: currentQuote.validUntil || new Date().toISOString().split('T')[0],
+            note: currentQuote.note
+        };
+
+        const updatedQuotes = currentQuote.id 
+            ? factory_quotations.map(q => q.id === payload.id ? payload : q)
+            : [...factory_quotations, payload];
+
+        await updateData({ ...data, factory_quotations: updatedQuotes });
+        setIsQuoteModalOpen(false);
+        setCurrentQuote({});
+    };
+
+    const handleSavePO = async () => {
+        if (!currentPO.poNumber || !currentPO.supplierId || !currentPO.items?.length) {
+            alert("Please fill required PO fields and add at least one item.");
+            return;
+        }
+
+        const payload: FactoryPurchaseOrder = {
+            id: currentPO.id || generateId(),
+            poNumber: currentPO.poNumber,
+            status: currentPO.status || 'Pending',
+            orderDate: currentPO.orderDate || new Date().toISOString().split('T')[0],
+            expectedDate: currentPO.expectedDate || '',
+            supplierId: currentPO.supplierId,
+            items: currentPO.items,
+            linkedProductionDocId: currentPO.linkedProductionDocId
+        };
+
+        const updatedPOs = currentPO.id 
+            ? factory_purchase_orders.map(p => p.id === payload.id ? payload : p)
+            : [...factory_purchase_orders, payload];
+
         await updateData({ ...data, factory_purchase_orders: updatedPOs });
-    }
-    
-    setIsModalOpen(false);
-  };
+        setIsPOModalOpen(false);
+        setCurrentPO({});
+    };
 
-  const calculateTotal = (po: FactoryPurchaseOrder) => {
-    return po.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-  };
+    const handleDeleteQuote = async (id: string) => {
+        if(confirm("Delete this quotation?")) {
+            await updateData({ ...data, factory_quotations: factory_quotations.filter(q => q.id !== id) });
+        }
+    };
 
-  // --- IMPROVED QUOTE WORKFLOW ---
+    const handleDeletePO = async (id: string) => {
+        if(confirm("Delete this PO?")) {
+            await updateData({ ...data, factory_purchase_orders: factory_purchase_orders.filter(p => p.id !== id) });
+        }
+    };
 
-  const handleOpenAddQuote = () => {
-      // Clean start
-      setCurrentQuote({
-          id: generateId(),
-          rawMaterialId: selectedMaterialId || '',
-          quotationDate: new Date().toISOString().split('T')[0],
-          validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          supplierId: '',
-          pricePerUnit: 0,
-          moq: 0,
-          leadTimeDays: 7,
-          paymentTerm: 'Credit 30 Days',
-          unit: 'kg',
-          note: ''
-      });
-      setSupplierSearchTerm('');
-      setTempSupplier(null);
-      setIsQuoteModalOpen(true);
-  };
+    // --- Filtered Data ---
+    const filteredPOs = useMemo(() => 
+        factory_purchase_orders.filter(p => p.poNumber.toLowerCase().includes(searchTerm.toLowerCase()))
+    , [factory_purchase_orders, searchTerm]);
 
-  const handleEditQuote = (quote: FactoryQuotation) => {
-      setCurrentQuote({ ...quote });
-      // Find and set temp supplier if we want to show details, 
-      // but usually editing implies changing price/terms.
-      // If user wants to change supplier, they can clear supplierId.
-      setTempSupplier(null);
-      setSupplierSearchTerm('');
-      setIsQuoteModalOpen(true);
-  };
+    const filteredQuotes = useMemo(() => 
+        factory_quotations.filter(q => {
+            const mat = packing_raw_materials.find(m => m.id === q.rawMaterialId)?.name || '';
+            const sup = factory_suppliers.find(s => s.id === q.supplierId)?.name || '';
+            return mat.toLowerCase().includes(searchTerm.toLowerCase()) || sup.toLowerCase().includes(searchTerm.toLowerCase());
+        })
+    , [factory_quotations, searchTerm, packing_raw_materials, factory_suppliers]);
 
-  const handleCreateMaterial = async (name: string) => {
-      const newId = generateId();
-      const newMaterial: InventoryItem = {
-          id: newId,
-          name: name,
-          quantity: 0,
-          unit: 'kg',
-          costPerUnit: 0,
-          category: 'Raw Material',
-          source: 'Purchased'
-      };
-      await updateData({ ...data, packing_raw_materials: [...packing_raw_materials, newMaterial] });
-      setCurrentQuote(prev => ({ ...prev, rawMaterialId: newId, unit: 'kg' }));
-  };
+    const lowStockMaterials = useMemo(() => 
+        packing_raw_materials.filter(m => (m.quantity || 0) < (m.reservedQuantity || 100))
+    , [packing_raw_materials]);
 
-  const handleSmartSupplierLookup = async () => {
-      if (!supplierSearchTerm.trim()) return;
-      setIsLookupLoading(true);
-      setTempSupplier(null);
-
-      // 1. Local Search (Existing Suppliers)
-      const existing = factory_suppliers.find(s => 
-          s.name.includes(supplierSearchTerm) || 
-          (s as any).taxId === supplierSearchTerm 
-      );
-
-      if (existing) {
-          setCurrentQuote(prev => ({ ...prev, supplierId: existing.id }));
-          setIsLookupLoading(false);
-          return;
-      }
-
-      // 2. Real AI Lookup (Google Search Grounding)
-      try {
-          const result = await fetchRealBusinessData(supplierSearchTerm, apiKey);
-          setTempSupplier({
-              id: generateId(),
-              ...result
-          });
-      } finally {
-          setIsLookupLoading(false);
-      }
-  };
-
-  const handleConfirmSupplier = async () => {
-      if (!tempSupplier) return;
-      
-      const newSupplier = tempSupplier as FactorySupplier;
-      const updatedSuppliers = [...factory_suppliers, newSupplier];
-      
-      // Save Supplier first
-      await updateData({ ...data, factory_suppliers: updatedSuppliers });
-      
-      // Link to Quote
-      setCurrentQuote(prev => ({ ...prev, supplierId: newSupplier.id }));
-      setTempSupplier(null);
-  };
-
-  const handleSaveQuote = async () => {
-      if (!currentQuote.rawMaterialId) { alert("กรุณาระบุวัตถุดิบ"); return; }
-      if (!currentQuote.supplierId) { alert("กรุณาระบุซัพพลายเออร์"); return; }
-      if (!currentQuote.pricePerUnit) { alert("กรุณาระบุราคา"); return; }
-      
-      let updatedQuotes = [...factory_quotations];
-      const existingIdx = updatedQuotes.findIndex(q => q.id === currentQuote.id);
-      
-      if (existingIdx >= 0) {
-          updatedQuotes[existingIdx] = currentQuote as FactoryQuotation;
-      } else {
-          updatedQuotes.push(currentQuote as FactoryQuotation);
-      }
-
-      await updateData({ ...data, factory_quotations: updatedQuotes });
-      setIsQuoteModalOpen(false);
-  };
-
-  // --- AI SCAN QUOTE (VISION) ---
-  const handleScanClick = () => {
-      fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      if (!apiKey) {
-          alert("Please set Gemini API Key in Settings first.");
-          return;
-      }
-
-      setIsScanning(true);
-      try {
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-              const base64Data = (reader.result as string).split(',')[1];
-              
-              const ai = new GoogleGenAI({ apiKey });
-              const prompt = `
-                  Analyze this quotation/invoice document (Image or PDF). Extract the following information into a strict JSON format:
-                  1. supplier_name: Company Name
-                  2. tax_id: Tax Identification Number (if visible)
-                  3. address: Company Address
-                  4. phone: Contact Number
-                  5. item_name: The main material/product item being quoted
-                  6. price_per_unit: Unit Price (Number)
-                  7. unit: Unit (e.g., kg, pcs, set, ton)
-                  8. moq: Minimum Order Quantity (Number, default 0 if not found)
-                  9. payment_term: Credit term or payment condition
-                  10. lead_time_days: Delivery time in days (Number, default 7 if not found)
-
-                  Response must be valid JSON only.
-              `;
-
-              const response = await ai.models.generateContent({
-                  model: "gemini-3-flash-preview",
-                  contents: [
-                      {
-                          inlineData: {
-                              mimeType: file.type,
-                              data: base64Data
-                          }
-                      },
-                      { text: prompt }
-                  ],
-                  config: {
-                      responseMimeType: "application/json"
-                  }
-              });
-
-              const result = JSON.parse(response.text || "{}");
-              
-              // Map AI result to State
-              if (result.supplier_name) {
-                  setSupplierSearchTerm(result.supplier_name);
-                  // Prepare Temp Supplier incase user wants to save
-                  setTempSupplier({
-                      id: generateId(),
-                      name: result.supplier_name,
-                      taxId: result.tax_id || '',
-                      address: result.address || '',
-                      phone: result.phone || '',
-                      contactPerson: 'Sales'
-                  });
-              }
-
-              // Update Quote Details
-              setCurrentQuote(prev => ({
-                  ...prev,
-                  pricePerUnit: result.price_per_unit || prev.pricePerUnit,
-                  unit: result.unit || prev.unit || 'kg',
-                  moq: result.moq || prev.moq,
-                  paymentTerm: result.payment_term || prev.paymentTerm,
-                  leadTimeDays: result.lead_time_days || prev.leadTimeDays,
-                  note: `Scanned from document. Item: ${result.item_name}`
-              }));
-
-          };
-          reader.readAsDataURL(file);
-      } catch (error: any) {
-          console.error("Scan failed:", error);
-          const errorStr = JSON.stringify(error) + (error.message || "");
-          if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED")) {
-              alert("⚠️ โควต้า AI เต็ม (Quota Exceeded) กรุณาลองใหม่ภายหลัง หรือกรอกเอง");
-          } else {
-              alert("Failed to scan document. Please try again.");
-          }
-      } finally {
-          setIsScanning(false);
-          // Reset file input
-          if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-  };
-
-  return (
-    <div className="space-y-6 pb-10">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight">ระบบจัดซื้อวัตถุดิบ</h2>
-          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[4px] mt-1">Purchasing & Vendor Management</p>
-        </div>
-        <div className="flex gap-2">
-            <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex">
-                 <button onClick={() => setView('list')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${view === 'list' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-600'}`}>
-                    <List size={16}/> รายการ PO
-                 </button>
-                 <button onClick={() => setView('rfq')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${view === 'rfq' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:text-slate-600'}`}>
-                    <Scale size={16}/> {t('pur.rfq')}
-                 </button>
-                 <button onClick={() => setView('analytics')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${view === 'analytics' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-slate-600'}`}>
-                    <BarChart3 size={16}/> สรุปยอดซื้อ (ปี)
-                 </button>
-            </div>
-            
-            <button onClick={handleOpenAddQuote} className="flex items-center justify-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl font-black text-sm shadow-xl hover:bg-emerald-700 transition-all active:scale-95 ml-2">
-                <Plus size={20} /> บันทึกใบเสนอราคา
-            </button>
-        </div>
-      </div>
-
-      {view === 'rfq' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-right-4 duration-500">
-              <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm h-fit">
-                  <h3 className="font-black text-slate-800 mb-4">{t('pur.selectMaterial')}</h3>
-                  
-                  {/* Search Box for Raw Materials */}
-                  <div className="relative mb-4">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                      <input 
-                          type="text" 
-                          placeholder="ค้นหาชื่อวัตถุดิบ..." 
-                          className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-amber-400 outline-none"
-                          value={materialSearch}
-                          onChange={(e) => setMaterialSearch(e.target.value)}
-                      />
-                  </div>
-
-                  <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                      {packing_raw_materials
-                        .filter(mat => mat.name.toLowerCase().includes(materialSearch.toLowerCase()))
-                        .map(mat => (
-                          <button 
-                            key={mat.id}
-                            onClick={() => setSelectedMaterialId(mat.id)}
-                            className={`w-full p-4 rounded-2xl text-left border-2 transition-all ${selectedMaterialId === mat.id ? 'bg-amber-50 border-amber-400 shadow-md' : 'bg-white border-slate-100 hover:border-slate-300'}`}
-                          >
-                              <div className="flex justify-between items-start">
-                                  <div className="font-black text-slate-800 text-sm">{mat.name}</div>
-                                  <span className="text-[10px] text-slate-400 font-mono font-bold">Stock: {mat.quantity}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                                  <Scale size={12}/> {factory_quotations.filter(q => q.rawMaterialId === mat.id).length} Quotes available
-                              </div>
-                          </button>
-                      ))}
-                      {packing_raw_materials.filter(mat => mat.name.toLowerCase().includes(materialSearch.toLowerCase())).length === 0 && (
-                          <div className="text-center py-8 text-slate-400 text-xs">ไม่พบวัตถุดิบที่ค้นหา</div>
-                      )}
-                  </div>
-              </div>
-
-              <div className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8 flex flex-col items-center justify-center min-h-[400px]">
-                  {selectedMaterialId ? (
-                      <div className="w-full h-full flex flex-col">
-                          <div className="flex justify-between items-center mb-6">
-                              <div>
-                                  <h3 className="text-xl font-black text-slate-800">{packing_raw_materials.find(m => m.id === selectedMaterialId)?.name}</h3>
-                                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{t('pur.compareTitle')}</p>
-                              </div>
-                              <button 
-                                onClick={handleOpenAddQuote}
-                                className="bg-slate-900 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-black transition-all"
-                              >
-                                  <Plus size={16}/> {t('pur.addQuote')}
-                              </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {factory_quotations.filter(q => q.rawMaterialId === selectedMaterialId).map(quote => {
-                                  const supplier = factory_suppliers.find(s => s.id === quote.supplierId);
-                                  const isBestPrice = !factory_quotations.filter(q => q.rawMaterialId === selectedMaterialId).some(q => q.pricePerUnit < quote.pricePerUnit);
-                                  const isFastest = !factory_quotations.filter(q => q.rawMaterialId === selectedMaterialId).some(q => q.leadTimeDays < quote.leadTimeDays);
-
-                                  return (
-                                      <div key={quote.id} className="p-6 rounded-3xl border-2 border-slate-100 hover:border-blue-400 transition-all relative group bg-white shadow-sm hover:shadow-md">
-                                          {(isBestPrice || isFastest) && (
-                                              <div className="absolute -top-3 left-4 flex gap-2">
-                                                  {isBestPrice && <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-1 rounded-lg uppercase shadow-sm flex items-center gap-1"><DollarSign size={12}/> Best Price</span>}
-                                                  {isFastest && <span className="bg-blue-500 text-white text-[10px] font-black px-2 py-1 rounded-lg uppercase shadow-sm flex items-center gap-1"><Truck size={12}/> Fastest</span>}
-                                              </div>
-                                          )}
-                                          
-                                          {/* Edit Button */}
-                                          <button 
-                                            onClick={() => handleEditQuote(quote)}
-                                            className="absolute top-4 right-4 text-slate-300 hover:text-blue-600 bg-white hover:bg-blue-50 p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                                          >
-                                              <Edit2 size={16}/>
-                                          </button>
-
-                                          <div className="flex justify-between items-start mb-4 mt-2">
-                                              <div>
-                                                  <h4 className="font-black text-slate-800 text-lg">{supplier?.name}</h4>
-                                                  <p className="text-[10px] text-slate-400 font-bold uppercase">Contact: {supplier?.contactPerson}</p>
-                                              </div>
-                                              <div className="text-right">
-                                                  <div className="text-2xl font-black text-slate-800">฿{quote.pricePerUnit}</div>
-                                                  <p className="text-[10px] text-slate-400 font-bold uppercase">Per {quote.unit}</p>
-                                              </div>
-                                          </div>
-                                          <div className="space-y-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl">
-                                              <div className="flex justify-between"><span>MOQ:</span> <span className="font-bold">{quote.moq.toLocaleString()} {quote.unit}</span></div>
-                                              <div className="flex justify-between"><span>Lead Time:</span> <span className="font-bold">{quote.leadTimeDays} Days</span></div>
-                                              <div className="flex justify-between"><span>Credit:</span> <span className="font-bold">{quote.paymentTerm}</span></div>
-                                          </div>
-                                          <button 
-                                            onClick={() => {
-                                                handleCreateNew(packing_raw_materials.find(m => m.id === selectedMaterialId));
-                                                if (currentPO) setCurrentPO(prev => ({...prev!, supplierId: quote.supplierId, items: [{rawMaterialId: quote.rawMaterialId, quantity: quote.moq, unitPrice: quote.pricePerUnit}]}));
-                                            }}
-                                            className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 hover:text-white hover:border-slate-800 transition-all flex items-center justify-center gap-2"
-                                          >
-                                              <ShoppingCart size={14}/> Create PO
-                                          </button>
-                                      </div>
-                                  );
-                              })}
-                              {factory_quotations.filter(q => q.rawMaterialId === selectedMaterialId).length === 0 && (
-                                  <div className="col-span-full text-center py-20 text-slate-400">
-                                      <p>ยังไม่มีใบเสนอราคาสำหรับวัตถุดิบนี้</p>
-                                  </div>
-                              )}
-                          </div>
-                      </div>
-                  ) : (
-                      <div className="text-center text-slate-300">
-                          <Scale size={64} className="mx-auto mb-4 opacity-20"/>
-                          <p className="font-black uppercase tracking-widest text-sm">เลือกวัตถุดิบทางซ้ายมือ<br/>เพื่อเปรียบเทียบราคา</p>
-                      </div>
-                  )}
-              </div>
-          </div>
-      )}
-
-      {view === 'analytics' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {/* Analytics components same as before */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
-                      <div className="p-4 bg-blue-50 rounded-full text-blue-600 mb-2"><DollarSign size={32}/></div>
-                      <h4 className="text-slate-400 font-bold uppercase text-xs tracking-widest">Total Spend ({selectedYear})</h4>
-                      <div className="text-3xl font-black text-slate-800 mt-1">฿{analyticsData.totalSpend.toLocaleString()}</div>
-                  </div>
-                  <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
-                      <div className="p-4 bg-emerald-50 rounded-full text-emerald-600 mb-2"><Package size={32}/></div>
-                      <h4 className="text-slate-400 font-bold uppercase text-xs tracking-widest">Total Items Purchased</h4>
-                      <div className="text-3xl font-black text-slate-800 mt-1">{analyticsData.totalItemsCount.toLocaleString()} <span className="text-sm text-slate-400 font-bold">Units</span></div>
-                  </div>
-                  <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
-                      <div className="p-4 bg-purple-50 rounded-full text-purple-600 mb-2"><FileCheck size={32}/></div>
-                      <h4 className="text-slate-400 font-bold uppercase text-xs tracking-widest">Total POs Issued</h4>
-                      <div className="text-3xl font-black text-slate-800 mt-1">{analyticsData.totalPO} <span className="text-sm text-slate-400 font-bold">Orders</span></div>
-                  </div>
-              </div>
-              
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-                  <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2"><BarChart3 className="text-blue-500"/> ยอดซื้อรายเดือน (Monthly Spend)</h3>
-                  <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={analyticsData.monthlySpend}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}}/>
-                              <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} tickFormatter={(val) => `${val/1000}k`}/>
-                              <Tooltip cursor={{fill: '#f8fafc'}} formatter={(val: number) => `฿${val.toLocaleString()}`}/>
-                              <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                      </ResponsiveContainer>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {view === 'list' && (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Smart Restock Assistant */}
-            <RestockAssistant materials={packing_raw_materials} onCreatePO={handleCreateNew} />
-
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input type="text" placeholder="ค้นหาเลขที่ PO หรือซัพพลายเออร์..." className="w-full pl-12 pr-6 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-50 transition-all outline-none" value={search} onChange={(e) => setSearch(e.target.value)} />
-                    </div>
-                    {/* Pagination Controls */}
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronLeft size={20}/></button>
-                        <span className="text-sm font-black text-slate-600">หน้า {currentPage} จาก {totalPages || 1}</span>
-                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30"><ChevronRight size={20}/></button>
-                    </div>
+    return (
+        <div className="space-y-6 pb-20">
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                <div>
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">{t('nav.purchasing')}</h2>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Supplier & Order Management</p>
                 </div>
-                {/* Table */}
-                <div className="overflow-x-auto">
+                <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                    <button onClick={() => setActiveTab('po')} className={`px-6 py-2.5 rounded-lg font-black text-xs uppercase tracking-wider transition-all ${activeTab === 'po' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>{t('nav.purchasing')}</button>
+                    <button onClick={() => setActiveTab('rfq')} className={`px-6 py-2.5 rounded-lg font-black text-xs uppercase tracking-wider transition-all ${activeTab === 'rfq' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>{t('pur.rfq')}</button>
+                    <button onClick={() => setActiveTab('restock')} className={`px-6 py-2.5 rounded-lg font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'restock' ? 'bg-red-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+                        {lowStockMaterials.length > 0 && <AlertCircle size={14} className="text-white"/>} {t('pur.smartRestock')}
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                    <input 
+                        type="text" 
+                        placeholder={t('common.search')}
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="w-full pl-12 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+                {activeTab === 'po' && (
+                    <button onClick={() => { setCurrentPO({ poNumber: `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`, orderDate: new Date().toISOString().split('T')[0], items: [] }); setIsPOModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg hover:bg-blue-700 transition-all flex items-center gap-2">
+                        <Plus size={18}/> Create PO
+                    </button>
+                )}
+                {activeTab === 'rfq' && (
+                    <button onClick={() => { setCurrentQuote({}); setIsQuoteModalOpen(true); }} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2">
+                        <Plus size={18}/> {t('pur.addQuote')}
+                    </button>
+                )}
+            </div>
+
+            {/* --- PO LIST --- */}
+            {activeTab === 'po' && (
+                <div className="grid grid-cols-1 gap-4">
+                    {filteredPOs.map(po => {
+                        const supplierName = factory_suppliers.find(s => s.id === po.supplierId)?.name || 'Unknown Supplier';
+                        const total = po.items.reduce((sum, i) => sum + (i.quantity * i.unitPrice), 0);
+                        return (
+                            <div key={po.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-300 transition-all group cursor-pointer" onClick={() => { setCurrentPO(po); setIsPOModalOpen(true); }}>
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-blue-50 p-2.5 rounded-xl text-blue-600"><FileText size={20}/></div>
+                                        <div>
+                                            <h3 className="font-black text-slate-800 text-lg">{po.poNumber}</h3>
+                                            <p className="text-xs text-slate-500 font-bold">{po.orderDate} • {supplierName}</p>
+                                        </div>
+                                    </div>
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${po.status === 'Received' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{po.status}</span>
+                                </div>
+                                <div className="bg-slate-50 rounded-xl p-4 flex justify-between items-center">
+                                    <div className="text-xs text-slate-500 font-bold">{po.items.length} Items</div>
+                                    <div className="text-lg font-black text-slate-800">฿{total.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {filteredPOs.length === 0 && <div className="text-center py-20 text-slate-400 font-bold">No Purchase Orders found.</div>}
+                </div>
+            )}
+
+            {/* --- RFQ LIST --- */}
+            {activeTab === 'rfq' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredQuotes.map(quote => {
+                        const mat = packing_raw_materials.find(m => m.id === quote.rawMaterialId);
+                        const sup = factory_suppliers.find(s => s.id === quote.supplierId);
+                        return (
+                            <div key={quote.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all relative group">
+                                <button onClick={() => handleDeleteQuote(quote.id)} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
+                                <div className="mb-4">
+                                    <h4 className="font-black text-slate-800">{mat?.name || 'Unknown Material'}</h4>
+                                    <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-1"><Truck size={12}/> {sup?.name}</p>
+                                </div>
+                                <div className="flex justify-between items-end border-t border-slate-100 pt-4">
+                                    <div>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase">Price / Unit</p>
+                                        <p className="text-xl font-black text-emerald-600">฿{quote.pricePerUnit.toFixed(2)}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase">MOQ</p>
+                                        <p className="text-sm font-bold text-slate-700">{quote.moq} {quote.unit}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* --- RESTOCK LIST --- */}
+            {activeTab === 'restock' && (
+                <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-widest border-b border-slate-100">
+                        <thead className="bg-red-50 text-red-700 font-black text-[10px] uppercase tracking-widest border-b border-red-100">
                             <tr>
-                                <th className="px-6 py-5">PO Number</th>
-                                <th className="px-6 py-5">Supplier</th>
-                                <th className="px-6 py-5">Date</th>
-                                <th className="px-6 py-5 text-right">Total Amount</th>
-                                <th className="px-6 py-5 text-center">Status</th>
-                                <th className="px-6 py-5 text-right">Actions</th>
+                                <th className="px-6 py-4">Item Name</th>
+                                <th className="px-6 py-4 text-right">Current Stock</th>
+                                <th className="px-6 py-4 text-right">Min Level</th>
+                                <th className="px-6 py-4 text-center">Status</th>
+                                <th className="px-6 py-4 text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {paginatedPOs.map((po) => {
-                                const supplier = factory_suppliers.find(s => s.id === po.supplierId);
-                                const total = calculateTotal(po);
-                                return (
-                                    <tr key={po.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-6 py-4 font-black text-slate-800 font-mono">{po.poNumber}</td>
-                                        <td className="px-6 py-4 font-bold text-slate-600">{supplier?.name || 'Unknown'}</td>
-                                        <td className="px-6 py-4 text-slate-500">{po.orderDate}</td>
-                                        <td className="px-6 py-4 text-right font-black text-slate-800">฿{total.toLocaleString()}</td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border uppercase flex items-center justify-center gap-1 w-fit mx-auto ${po.status === 'Received' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{po.status}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button onClick={() => { setCurrentPO({...po}); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={18} /></button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                            {lowStockMaterials.map(m => (
+                                <tr key={m.id} className="hover:bg-slate-50">
+                                    <td className="px-6 py-4 font-bold text-slate-800">{m.name}</td>
+                                    <td className="px-6 py-4 text-right font-mono text-red-600 font-black">{m.quantity} {m.unit}</td>
+                                    <td className="px-6 py-4 text-right font-mono text-slate-500">{m.reservedQuantity || 100}</td>
+                                    <td className="px-6 py-4 text-center"><span className="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-black uppercase">Low Stock</span></td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button 
+                                            onClick={() => {
+                                                setCurrentPO({
+                                                    poNumber: `PO-AUTO-${Date.now().toString().slice(-6)}`,
+                                                    orderDate: new Date().toISOString().split('T')[0],
+                                                    items: [{ rawMaterialId: m.id, quantity: (m.reservedQuantity || 100) * 2, unitPrice: m.costPerUnit || 0 }]
+                                                });
+                                                setIsPOModalOpen(true);
+                                                setActiveTab('po');
+                                            }}
+                                            className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 shadow-md transition-all active:scale-95"
+                                        >
+                                            Order Now
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {lowStockMaterials.length === 0 && <tr><td colSpan={5} className="text-center py-12 text-slate-400 font-bold">All stock levels are healthy.</td></tr>}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            )}
+
+            {/* --- CREATE QUOTE MODAL --- */}
+            {isQuoteModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white">
+                            <h3 className="text-xl font-black text-slate-800 tracking-tight">Add Quotation</h3>
+                            <button onClick={() => setIsQuoteModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 rounded-full"><X size={24}/></button>
+                        </div>
+                        <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
+                            
+                            {/* --- FILE SCANNER UI (Enhanced) --- */}
+                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5 mb-2 relative overflow-hidden group hover:shadow-md transition-all">
+                                <div className="absolute top-0 right-0 p-3 opacity-10"><ScanLine size={100}/></div>
+                                <div className="relative z-10">
+                                    <h4 className="text-xs font-black text-blue-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                        <FileType size={16}/> สแกนเอกสาร (AI OCR)
+                                    </h4>
+                                    <div className="flex gap-3">
+                                        <button 
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={isScanLoading}
+                                            className="flex-1 bg-white border border-blue-200 text-blue-700 px-4 py-4 rounded-xl font-bold text-xs shadow-sm hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all flex items-center justify-center gap-3"
+                                        >
+                                            {isScanLoading ? <Loader2 size={18} className="animate-spin"/> : <Upload size={18}/>}
+                                            {isScanLoading ? "กำลังวิเคราะห์ข้อมูล..." : "อัปโหลดใบเสนอราคา (PDF / รูปภาพ)"}
+                                        </button>
+                                    </div>
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        className="hidden" 
+                                        accept="image/*,application/pdf"
+                                        onChange={handleScanFile}
+                                    />
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <p className="text-[10px] text-blue-400 font-medium">* รองรับไฟล์ PDF, JPG, PNG ระบบจะดึงชื่อและราคาให้อัตโนมัติ</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Raw Material</label>
+                                <SearchableSelect options={materialOptions} value={currentQuote.rawMaterialId} onChange={val => setCurrentQuote({...currentQuote, rawMaterialId: val})} placeholder="Select Material..."/>
+                            </div>
+
+                            {/* Supplier Section */}
+                            <div className="space-y-3">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Supplier</label>
+                                <SearchableSelect 
+                                    options={supplierOptions}
+                                    value={currentQuote.supplierId}
+                                    onChange={(val) => setCurrentQuote({...currentQuote, supplierId: val})}
+                                    placeholder="Choose existing supplier..."
+                                />
+
+                                {/* Smart Search UI */}
+                                <div className="mt-2 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5">
+                                            <Sparkles size={12} className="text-amber-500"/> Or Find New Supplier (AI Smart Search)
+                                        </span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="text"
+                                            value={supplierSearchTerm}
+                                            onChange={(e) => setSupplierSearchTerm(e.target.value)}
+                                            placeholder="Type company name..."
+                                            className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white"
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSmartSupplierLookup()}
+                                        />
+                                        <button 
+                                            onClick={() => handleSmartSupplierLookup()}
+                                            disabled={isLookupLoading}
+                                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 transition-all shadow-sm"
+                                        >
+                                            {isLookupLoading ? <Loader2 size={14} className="animate-spin"/> : <Search size={14}/>}
+                                            Search
+                                        </button>
+                                    </div>
+
+                                    {/* AI Result Card */}
+                                    {tempSupplier && (
+                                        <div className="mt-3 bg-white p-4 rounded-xl border-2 border-green-100 shadow-sm animate-in fade-in zoom-in slide-in-from-top-2 relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                                            <div className="relative z-10">
+                                                <div className="flex justify-between items-start mb-2">
+                                                     <div>
+                                                         <div className="text-[10px] text-green-600 font-bold uppercase mb-0.5">Found Result</div>
+                                                         <h4 className="font-black text-slate-800 text-sm">{tempSupplier.name}</h4>
+                                                     </div>
+                                                     <button 
+                                                        onClick={handleConfirmSupplier}
+                                                        className="bg-green-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-green-600 shadow-md flex items-center gap-1 transition-transform active:scale-95"
+                                                    >
+                                                        <CheckCircle2 size={12}/> Use This
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="text-[10px] text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100 space-y-1">
+                                                    <div className="flex items-start gap-2">
+                                                        <MapPin size={12} className="shrink-0 mt-0.5 text-slate-400"/>
+                                                        <span>{tempSupplier.address || '-'}</span>
+                                                    </div>
+                                                    {tempSupplier.taxId && (
+                                                        <div className="flex items-center gap-2 font-mono text-slate-600">
+                                                            <FileText size={12} className="shrink-0 text-slate-400"/>
+                                                            <span>Tax ID: {tempSupplier.taxId}</span>
+                                                        </div>
+                                                    )}
+                                                    {tempSupplier.phone && (
+                                                        <div className="flex items-center gap-2">
+                                                            <Phone size={12} className="shrink-0 text-slate-400"/>
+                                                            <span>{tempSupplier.phone}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Price</label><input type="number" value={currentQuote.pricePerUnit} onChange={e => setCurrentQuote({...currentQuote, pricePerUnit: parseFloat(e.target.value)})} className="w-full px-4 py-2 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500"/></div>
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Unit</label><input type="text" value={currentQuote.unit} onChange={e => setCurrentQuote({...currentQuote, unit: e.target.value})} className="w-full px-4 py-2 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500"/></div>
+                            </div>
+                        </div>
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={handleSaveQuote} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-black transition-all">Save Quote</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- CREATE PO MODAL --- */}
+            {isPOModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[90vh]">
+                        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white">
+                            <h3 className="text-xl font-black text-slate-800 tracking-tight">Create Purchase Order</h3>
+                            <button onClick={() => setIsPOModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 rounded-full"><X size={24}/></button>
+                        </div>
+                        
+                        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                            {/* Left: General Info */}
+                            <div className="w-full lg:w-1/3 border-r border-slate-100 p-8 space-y-6 overflow-y-auto custom-scrollbar bg-slate-50/50">
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">PO Number</label><input type="text" value={currentPO.poNumber} onChange={e => setCurrentPO({...currentPO, poNumber: e.target.value})} className="w-full px-4 py-2 border rounded-xl font-bold outline-none bg-white"/></div>
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label><input type="date" value={currentPO.orderDate} onChange={e => setCurrentPO({...currentPO, orderDate: e.target.value})} className="w-full px-4 py-2 border rounded-xl font-bold outline-none bg-white"/></div>
+                                
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Supplier</label>
+                                    <SearchableSelect options={supplierOptions} value={currentPO.supplierId} onChange={val => setCurrentPO({...currentPO, supplierId: val})} placeholder="Select Supplier..." className="bg-white"/>
+                                </div>
+                            </div>
+
+                            {/* Right: Items */}
+                            <div className="flex-1 p-8 overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-black text-slate-800">Order Items</h4>
+                                    <button onClick={() => setCurrentPO({...currentPO, items: [...(currentPO.items || []), { rawMaterialId: '', quantity: 0, unitPrice: 0 }]})} className="text-blue-600 font-bold text-xs hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all">+ Add Item</button>
+                                </div>
+                                <div className="space-y-3">
+                                    {currentPO.items?.map((item, idx) => (
+                                        <div key={idx} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                            <div className="flex-1">
+                                                <SearchableSelect options={materialOptions} value={item.rawMaterialId} onChange={val => {
+                                                    const newItems = [...currentPO.items!];
+                                                    const mat = packing_raw_materials.find(m => m.id === val);
+                                                    newItems[idx].rawMaterialId = val;
+                                                    newItems[idx].unitPrice = mat?.costPerUnit || 0;
+                                                    setCurrentPO({...currentPO, items: newItems});
+                                                }} className="border-0 bg-transparent p-0 shadow-none"/>
+                                            </div>
+                                            <input type="number" value={item.quantity} onChange={e => {
+                                                const newItems = [...currentPO.items!];
+                                                newItems[idx].quantity = parseFloat(e.target.value);
+                                                setCurrentPO({...currentPO, items: newItems});
+                                            }} className="w-20 text-center bg-white border border-slate-200 rounded-lg p-2 font-bold outline-none" placeholder="Qty"/>
+                                            <input type="number" value={item.unitPrice} onChange={e => {
+                                                const newItems = [...currentPO.items!];
+                                                newItems[idx].unitPrice = parseFloat(e.target.value);
+                                                setCurrentPO({...currentPO, items: newItems});
+                                            }} className="w-24 text-right bg-white border border-slate-200 rounded-lg p-2 font-mono outline-none" placeholder="Price"/>
+                                            <button onClick={() => setCurrentPO({...currentPO, items: currentPO.items?.filter((_, i) => i !== idx)})} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
+                                        </div>
+                                    ))}
+                                    {(!currentPO.items || currentPO.items.length === 0) && <div className="text-center py-10 text-slate-300 font-bold uppercase text-xs border-2 border-dashed border-slate-100 rounded-xl">No items added</div>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={handleSavePO} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all">Confirm Order</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
-      )}
-
-      {/* PO CREATE MODAL */}
-      {isModalOpen && currentPO && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col animate-in zoom-in duration-200">
-                  <div className="px-10 py-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                      <h3 className="text-2xl font-black text-slate-800 tracking-tight">รายละเอียดใบสั่งซื้อ</h3>
-                      <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={28}/></button>
-                  </div>
-                  <div className="p-10 flex-1 overflow-y-auto custom-scrollbar">
-                      {/* Form Header */}
-                      <div className="grid grid-cols-2 gap-6 mb-6">
-                          <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">PO Number</label>
-                              <input type="text" value={currentPO.poNumber} onChange={e => setCurrentPO({...currentPO, poNumber: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-xl font-bold" />
-                          </div>
-                          <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Supplier</label>
-                              <SearchableSelect 
-                                  options={supplierOptions} 
-                                  value={currentPO.supplierId} 
-                                  onChange={val => setCurrentPO({...currentPO, supplierId: val})} 
-                                  placeholder="Select Supplier"
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Order Date</label>
-                              <input type="date" value={currentPO.orderDate} onChange={e => setCurrentPO({...currentPO, orderDate: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-xl font-bold" />
-                          </div>
-                          <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Status</label>
-                              <select value={currentPO.status} onChange={e => setCurrentPO({...currentPO, status: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-xl font-bold">
-                                  <option value="Pending">Pending</option>
-                                  <option value="Approved">Approved</option>
-                                  <option value="Sent">Sent</option>
-                                  <option value="Received">Received (Update Stock)</option>
-                                  <option value="Cancelled">Cancelled</option>
-                              </select>
-                          </div>
-                      </div>
-
-                      {/* Items Table */}
-                      <div className="space-y-3">
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Order Items</label>
-                          {currentPO.items.map((item, idx) => (
-                              <div key={idx} className="flex gap-3 items-end">
-                                  <div className="flex-1">
-                                      <SearchableSelect 
-                                          options={materialOptions}
-                                          value={item.rawMaterialId}
-                                          onChange={(val) => {
-                                              const newItems = [...currentPO.items];
-                                              newItems[idx].rawMaterialId = val;
-                                              // Auto fill price from quote/material
-                                              const mat = packing_raw_materials.find(m => m.id === val);
-                                              if (mat) newItems[idx].unitPrice = mat.costPerUnit || 0;
-                                              setCurrentPO({...currentPO, items: newItems});
-                                          }}
-                                          placeholder="Select Material"
-                                      />
-                                  </div>
-                                  <div className="w-24">
-                                      <input 
-                                          type="number" 
-                                          value={item.quantity} 
-                                          onChange={(e) => {
-                                              const newItems = [...currentPO.items];
-                                              newItems[idx].quantity = parseFloat(e.target.value) || 0;
-                                              setCurrentPO({...currentPO, items: newItems});
-                                          }}
-                                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-right font-bold"
-                                          placeholder="Qty"
-                                      />
-                                  </div>
-                                  <div className="w-24">
-                                      <input 
-                                          type="number" 
-                                          value={item.unitPrice} 
-                                          onChange={(e) => {
-                                              const newItems = [...currentPO.items];
-                                              newItems[idx].unitPrice = parseFloat(e.target.value) || 0;
-                                              setCurrentPO({...currentPO, items: newItems});
-                                          }}
-                                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-right font-bold"
-                                          placeholder="Price"
-                                      />
-                                  </div>
-                                  <button 
-                                      onClick={() => setCurrentPO({...currentPO, items: currentPO.items.filter((_, i) => i !== idx)})}
-                                      className="p-2 text-slate-400 hover:text-red-500 rounded-lg"
-                                  >
-                                      <Trash2 size={18}/>
-                                  </button>
-                              </div>
-                          ))}
-                          <button 
-                              onClick={() => setCurrentPO({...currentPO, items: [...currentPO.items, {rawMaterialId: '', quantity: 0, unitPrice: 0}]})}
-                              className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline mt-2"
-                          >
-                              <Plus size={14}/> Add Item
-                          </button>
-                      </div>
-                  </div>
-                  <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-                      <div className="text-xl font-black text-slate-800">
-                          Total: ฿{calculateTotal(currentPO).toLocaleString()}
-                      </div>
-                      <div className="flex gap-3">
-                          <button onClick={() => setIsModalOpen(false)} className="px-6 py-2 bg-slate-200 rounded-xl font-bold text-slate-600">Close</button>
-                          <button onClick={handleSavePO} className="px-8 py-2 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:bg-black transition-all">Save PO</button>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* --- NEW SMART ADD QUOTE MODAL (Code Remains same as previous context but preserved) --- */}
-      {isQuoteModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col animate-in zoom-in duration-200 max-h-[90vh]">
-                  {/* ... Quote Modal Content ... */}
-                  <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                      <div>
-                          <h3 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2"><Zap className="text-amber-500" fill="currentColor"/> บันทึกราคา (Smart Quote)</h3>
-                      </div>
-                      <button onClick={() => setIsQuoteModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"><X size={24}/></button>
-                  </div>
-                  
-                  <div className="p-8 space-y-8 flex-1 overflow-y-auto custom-scrollbar">
-                      {/* Material Section */}
-                      <div className="space-y-3">
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">เลือกวัตถุดิบ</label>
-                          <SearchableSelect 
-                              options={materialOptions}
-                              value={currentQuote.rawMaterialId}
-                              onChange={(val) => setCurrentQuote({...currentQuote, rawMaterialId: val})}
-                              onCreate={(name) => handleCreateMaterial(name)}
-                              placeholder="ค้นหาวัตถุดิบ..."
-                          />
-                      </div>
-
-                      {/* Supplier Section */}
-                      <div className="space-y-3">
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">เลือกซัพพลายเออร์</label>
-                          <SearchableSelect 
-                              options={supplierOptions}
-                              value={currentQuote.supplierId}
-                              onChange={(val) => setCurrentQuote({...currentQuote, supplierId: val})}
-                              placeholder="เลือกซัพพลายเออร์..."
-                          />
-                      </div>
-
-                      {/* Pricing Section */}
-                      <div className="grid grid-cols-2 gap-5">
-                          <div>
-                              <label className="block text-[10px] font-bold text-slate-400 mb-1">ราคา / หน่วย</label>
-                              <input 
-                                type="number" 
-                                value={currentQuote.pricePerUnit || ''} 
-                                onChange={e => setCurrentQuote({...currentQuote, pricePerUnit: parseFloat(e.target.value)})}
-                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold"
-                                placeholder="0.00"
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-[10px] font-bold text-slate-400 mb-1">หน่วย (Unit)</label>
-                              <input 
-                                value={currentQuote.unit} 
-                                onChange={e => setCurrentQuote({...currentQuote, unit: e.target.value})}
-                                className="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold"
-                                placeholder="kg"
-                              />
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-                      <button onClick={() => setIsQuoteModalOpen(false)} className="px-6 py-3 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all">ยกเลิก</button>
-                      <button onClick={handleSaveQuote} className="px-8 py-3 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-black transition-all">บันทึก</button>
-                  </div>
-              </div>
-          </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default Purchasing;
