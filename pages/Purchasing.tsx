@@ -8,7 +8,8 @@ import {
     DollarSign, Calendar, Factory, ChevronLeft, ChevronRight,
     BarChart3, List, PieChart as PieIcon, TrendingUp, Scale, Clock, Star,
     AlertCircle, ArrowRight, FileCheck, ClipboardCheck, ScanLine, Loader2,
-    Building2, Globe, Sparkles, Filter, Save, Zap, Key, MapPin, Phone, Upload, FileText, FileType
+    Building2, Globe, Sparkles, Filter, Save, Zap, Key, MapPin, Phone, Upload, FileText, FileType,
+    ThumbsUp
 } from 'lucide-react';
 import { FactoryPurchaseOrder, PurchaseOrderItem, FactorySupplier, FactoryQuotation, InventoryItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
@@ -26,11 +27,11 @@ const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6'
 const mockBusinessLookup = async (query: string) => {
     await new Promise(r => setTimeout(r, 1000));
     return {
-        name: `(Simulation Mode) ไม่พบ API Key`, 
-        address: `กรุณาใส่ Gemini API Key ในหน้า Settings เพื่อค้นหาข้อมูลจริง`,
-        taxId: query,
-        phone: '-',
-        contactPerson: '-'
+        name: `(Simulation) ${query} Co., Ltd.`, 
+        address: `123 Simulated Road, Bangkok, Thailand 10110`,
+        taxId: '0105551234567',
+        phone: '02-123-4567',
+        contactPerson: 'Sale Department'
     };
 };
 
@@ -63,7 +64,7 @@ const fetchRealBusinessData = async (query: string, apiKey: string) => {
         `;
 
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview", 
+            model: "gemini-3-pro-image-preview", // Use model with search grounding capability
             contents: prompt,
             config: {
                 tools: [{ googleSearch: {} }], 
@@ -140,7 +141,7 @@ const RestockAssistant = ({ materials, onCreatePO }: { materials: InventoryItem[
                         <div key={item.id} className="bg-white p-3 rounded-xl border border-orange-100 flex items-center gap-3 min-w-[200px] max-w-[240px] shadow-sm shrink-0 hover:shadow-md transition-shadow">
                             <div className="flex-1 min-w-0">
                                 <div className="font-bold text-slate-800 text-xs truncate" title={item.name}>{item.name}</div>
-                                <div className="text-red-500 text-[10px] font-black">{item.quantity} {item.unit} left</div>
+                                <div className="text-red-500 text-[10px] font-black">{item.quantity.toLocaleString()} {item.unit} left</div>
                             </div>
                             <button onClick={() => onCreatePO(item)} className="p-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors shrink-0">
                                 <Plus size={14}/>
@@ -193,6 +194,18 @@ const Purchasing: React.FC = () => {
   const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
   const [isLookupLoading, setIsLookupLoading] = useState(false);
   const [tempSupplier, setTempSupplier] = useState<Partial<FactorySupplier> | null>(null);
+
+  // --- BEST PRICE CALCULATION ---
+  const bestPriceQuoteId = useMemo(() => {
+      if (!selectedMaterialId) return null;
+      const relevantQuotes = factory_quotations.filter(q => q.rawMaterialId === selectedMaterialId);
+      if (relevantQuotes.length === 0) return null;
+      
+      // Find min price
+      const minPrice = Math.min(...relevantQuotes.map(q => q.pricePerUnit));
+      const bestQuote = relevantQuotes.find(q => q.pricePerUnit === minPrice);
+      return bestQuote?.id;
+  }, [selectedMaterialId, factory_quotations]);
 
   // --- ANALYTICS LOGIC ---
   const analyticsData = useMemo(() => {
@@ -558,8 +571,16 @@ const Purchasing: React.FC = () => {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {factory_quotations.filter(q => q.rawMaterialId === selectedMaterialId).map(quote => {
                                   const supplier = factory_suppliers.find(s => s.id === quote.supplierId);
+                                  const isBestPrice = quote.id === bestPriceQuoteId;
+                                  
                                   return (
-                                      <div key={quote.id} className="p-6 rounded-3xl border-2 border-slate-100 hover:border-blue-400 transition-all relative group bg-white shadow-sm hover:shadow-md">
+                                      <div key={quote.id} className={`p-6 rounded-3xl border-2 transition-all relative group bg-white shadow-sm hover:shadow-md ${isBestPrice ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-100' : 'border-slate-100 hover:border-blue-400'}`}>
+                                          {isBestPrice && (
+                                              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-emerald-600 text-white px-3 py-1 rounded-full text-[10px] font-bold shadow-sm flex items-center gap-1 z-10">
+                                                  <Star size={10} fill="currentColor"/> Best Price
+                                              </div>
+                                          )}
+                                          
                                           <button onClick={() => handleEditQuote(quote)} className="absolute top-4 right-4 text-slate-300 hover:text-blue-600 bg-white hover:bg-blue-50 p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"><Edit2 size={16}/></button>
                                           <div className="flex justify-between items-start mb-4 mt-2">
                                               <div>
@@ -567,17 +588,17 @@ const Purchasing: React.FC = () => {
                                                   <p className="text-[10px] text-slate-400 font-bold uppercase">Contact: {supplier?.contactPerson}</p>
                                               </div>
                                               <div className="text-right">
-                                                  <div className="text-2xl font-black text-slate-800">฿{quote.pricePerUnit}</div>
+                                                  <div className={`text-2xl font-black ${isBestPrice ? 'text-emerald-600' : 'text-slate-800'}`}>฿{quote.pricePerUnit}</div>
                                                   <p className="text-[10px] text-slate-400 font-bold uppercase">Per {quote.unit}</p>
                                               </div>
                                           </div>
-                                          <div className="space-y-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl">
+                                          <div className={`space-y-2 text-xs text-slate-600 p-3 rounded-xl ${isBestPrice ? 'bg-white/60' : 'bg-slate-50'}`}>
                                               <div className="flex justify-between"><span>MOQ:</span> <span className="font-bold">{quote.moq.toLocaleString()} {quote.unit}</span></div>
                                               <div className="flex justify-between"><span>Lead Time:</span> <span className="font-bold">{quote.leadTimeDays} Days</span></div>
                                               <div className="flex justify-between"><span>Credit:</span> <span className="font-bold">{quote.paymentTerm}</span></div>
                                           </div>
-                                          <button onClick={() => { handleCreateNew(packing_raw_materials.find(m => m.id === selectedMaterialId)); if (currentPO) setCurrentPO(prev => ({...prev!, supplierId: quote.supplierId, items: [{rawMaterialId: quote.rawMaterialId, quantity: quote.moq, unitPrice: quote.pricePerUnit}]})); }} className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 hover:text-white hover:border-slate-800 transition-all flex items-center justify-center gap-2">
-                                              <ShoppingCart size={14}/> Create PO
+                                          <button onClick={() => { handleCreateNew(packing_raw_materials.find(m => m.id === selectedMaterialId)); if (currentPO) setCurrentPO(prev => ({...prev!, supplierId: quote.supplierId, items: [{rawMaterialId: quote.rawMaterialId, quantity: quote.moq, unitPrice: quote.pricePerUnit}]})); }} className={`w-full mt-4 border-2 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${isBestPrice ? 'bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-800 hover:text-white hover:border-slate-800'}`}>
+                                              <ShoppingCart size={14}/> {isBestPrice ? 'Select Best Offer' : 'Create PO'}
                                           </button>
                                       </div>
                                   );
@@ -717,21 +738,24 @@ const Purchasing: React.FC = () => {
                   
                   <div className="p-8 space-y-8 flex-1 overflow-y-auto custom-scrollbar">
                       
-                      {/* --- AI FILE SCANNER UI (Enhanced) --- */}
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5 mb-2 relative overflow-hidden group hover:shadow-md transition-all">
-                          <div className="absolute top-0 right-0 p-3 opacity-10"><ScanLine size={100}/></div>
+                      {/* --- AI FILE SCANNER UI (Enhanced Gradient Box) --- */}
+                      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 mb-2 relative overflow-hidden group shadow-lg">
+                          <div className="absolute top-0 right-0 p-3 opacity-10"><ScanLine size={120} color="white"/></div>
+                          <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white opacity-10 rounded-full"></div>
                           <div className="relative z-10">
-                              <h4 className="text-xs font-black text-blue-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                  <FileType size={16}/> สแกนเอกสาร (AI OCR)
+                              <h4 className="text-sm font-black text-white uppercase tracking-widest mb-3 flex items-center gap-2">
+                                  <FileType size={18}/> AI Quote Scanner
                               </h4>
+                              <p className="text-blue-100 text-xs mb-4 font-medium max-w-xs">อัปโหลดรูปหรือ PDF ใบเสนอราคา ระบบจะดึงข้อมูล Supplier และราคาให้อัตโนมัติ</p>
+                              
                               <div className="flex gap-3">
                                   <button 
                                       onClick={handleScanClick}
                                       disabled={isScanning}
-                                      className="flex-1 bg-white border border-blue-200 text-blue-700 px-4 py-4 rounded-xl font-bold text-xs shadow-sm hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all flex items-center justify-center gap-3"
+                                      className="flex-1 bg-white text-blue-700 px-4 py-3.5 rounded-xl font-black text-xs shadow-md hover:bg-blue-50 transition-all flex items-center justify-center gap-3 active:scale-95"
                                   >
                                       {isScanning ? <Loader2 size={18} className="animate-spin"/> : <Upload size={18}/>}
-                                      {isScanning ? "กำลังวิเคราะห์ข้อมูล..." : "อัปโหลดใบเสนอราคา (PDF / รูปภาพ)"}
+                                      {isScanning ? "กำลังวิเคราะห์ข้อมูล (Analyzing)..." : "เลือกไฟล์ (Upload File)"}
                                   </button>
                               </div>
                               <input 
@@ -741,9 +765,6 @@ const Purchasing: React.FC = () => {
                                   accept="image/*,application/pdf"
                                   onChange={handleFileChange}
                               />
-                              <div className="flex items-center gap-2 mt-2">
-                                  <p className="text-[10px] text-blue-400 font-medium">* รองรับไฟล์ PDF, JPG, PNG ระบบจะดึงชื่อและราคาให้อัตโนมัติ</p>
-                              </div>
                           </div>
                       </div>
 
@@ -777,7 +798,7 @@ const Purchasing: React.FC = () => {
                       <div className="space-y-3 pt-4 border-t border-dashed border-slate-200">
                           <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                               <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px]">2</span> 
-                              ระบุซัพพลายเออร์ (AI Lookup)
+                              ระบุซัพพลายเออร์ (Smart Lookup)
                           </label>
                           
                           {!currentQuote.supplierId ? (
@@ -808,7 +829,7 @@ const Purchasing: React.FC = () => {
                                       <div className="bg-white border-2 border-blue-100 rounded-xl p-4 animate-in slide-in-from-top-2 relative">
                                           <div className="flex justify-between items-start mb-3">
                                               <span className="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                                                  <Edit2 size={10}/> Data Found (Editable)
+                                                  <Edit2 size={10}/> AI Data Found
                                               </span>
                                               <button onClick={() => setTempSupplier(null)} className="text-slate-300 hover:text-red-500"><X size={16}/></button>
                                           </div>
