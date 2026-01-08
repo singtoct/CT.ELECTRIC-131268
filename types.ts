@@ -86,6 +86,7 @@ export interface Machine {
   location: string;
   workingHoursPerDay: number;
   lastStartedAt?: string;
+  tonnage?: number; // Clamping force in Tons (e.g., 120T, 250T)
 }
 
 export interface CostItem {
@@ -195,6 +196,7 @@ export interface Product {
   category?: string; 
   standardColor?: string;
   profitMargin?: number;
+  minTonnage?: number; // Minimum required machine tonnage
   
   aiPriceRecommendation?: AiPriceRecommendation;
   

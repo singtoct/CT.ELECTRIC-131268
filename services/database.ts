@@ -123,8 +123,9 @@ const rawJsonData: any = {
     }
   ],
   "factory_products": [
-    { "id": "prod-a101", "name": "ฝาหน้ากาก CT A-101", "color": "สีขาว", "salePrice": 3.77, "cycleTimeSeconds": 15, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย" },
-    { "id": "prod-a102", "name": "ฝาหน้ากาก CT A-102", "color": "สีขาว", "salePrice": 3.7, "cycleTimeSeconds": 15, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย" }
+    { "id": "prod-a101", "name": "ฝาหน้ากาก CT A-101", "color": "สีขาว", "salePrice": 3.77, "cycleTimeSeconds": 15, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย", "minTonnage": 100 },
+    { "id": "prod-a102", "name": "ฝาหน้ากาก CT A-102", "color": "สีขาว", "salePrice": 3.7, "cycleTimeSeconds": 15, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย", "minTonnage": 100 },
+    { "id": "prod-b205", "name": "บล็อกลอย 2x4", "color": "สีขาว", "salePrice": 12.5, "cycleTimeSeconds": 25, "productType": "FinishedGood", "category": "สินค้าเพื่อขาย", "minTonnage": 200 }
   ],
   "packing_boms": [
     {
@@ -138,11 +139,16 @@ const rawJsonData: any = {
     }
   ],
   "factory_machines": [
-    { "id": "m1", "name": "เครื่องฉีด 1", "status": "ทำงาน", "location": "โซน A", "workingHoursPerDay": 18 },
-    { "id": "m2", "name": "เครื่องฉีด 2", "status": "ว่าง", "location": "โซน A", "workingHoursPerDay": 18 }
+    { "id": "m1", "name": "เครื่องฉีด 1", "status": "ทำงาน", "location": "โซน A", "workingHoursPerDay": 24, "tonnage": 120 },
+    { "id": "m2", "name": "เครื่องฉีด 2", "status": "ว่าง", "location": "โซน A", "workingHoursPerDay": 24, "tonnage": 120 },
+    { "id": "m3", "name": "เครื่องฉีด 3 (ใหญ่)", "status": "ว่าง", "location": "โซน B", "workingHoursPerDay": 24, "tonnage": 250 },
+    { "id": "m4", "name": "เครื่องฉีด 4", "status": "เสีย", "location": "โซน B", "workingHoursPerDay": 24, "tonnage": 120 }
   ],
   "packing_employees": [
-    { "id": "e1", "name": "กะปิ", "department": "ฝ่ายผลิต", "status": "Active", "dailyWage": 372, "hireDate": "2024-11-23", "roleId": "role_production" }
+    { "id": "e1", "name": "กะปิ", "department": "ฝ่ายผลิต", "status": "Active", "dailyWage": 372, "hireDate": "2024-11-23", "roleId": "operator" },
+    { "id": "e2", "name": "สมชาย", "department": "ฝ่ายผลิต", "status": "Active", "dailyWage": 400, "hireDate": "2023-05-15", "roleId": "technician" },
+    { "id": "e3", "name": "วิภา", "department": "ฝ่ายผลิต", "status": "Active", "dailyWage": 360, "hireDate": "2024-01-10", "roleId": "general" },
+    { "id": "e4", "name": "สมหมาย", "department": "ฝ่ายผลิต", "status": "Active", "dailyWage": 380, "hireDate": "2023-11-01", "roleId": "operator" }
   ],
   "molding_logs": [],
   "factory_suppliers": [
