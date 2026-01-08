@@ -10,8 +10,6 @@ import {
 } from 'lucide-react';
 import { InventoryItem, Product, BOMItem } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
-import { useSortableData } from '../hooks/useSortableData';
-import SortableTh from '../components/SortableTh';
 
 const RawMaterialBOM: React.FC = () => {
     const data = useFactoryData();
@@ -49,9 +47,6 @@ const RawMaterialBOM: React.FC = () => {
         return localMaterials.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [localMaterials, searchTerm]);
 
-    // --- SORTING HOOK ---
-    const { items: sortedMaterials, requestSort, sortConfig } = useSortableData(filteredMaterials, { key: 'name', direction: 'ascending' });
-
     const filteredProducts = useMemo(() => {
         return factory_products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [factory_products, searchTerm]);
@@ -80,9 +75,7 @@ const RawMaterialBOM: React.FC = () => {
         let totalCost = 0;
 
         selectedProduct.bom.forEach(item => {
-            const mat = packing_raw_materials.find(m => m.id === item.materialId) ||
-                        packing_raw_materials.find(m => m.name.trim().toLowerCase() === item.materialName.trim().toLowerCase());
-            
+            const mat = packing_raw_materials.find(m => m.id === item.materialId);
             const stock = mat?.quantity || 0;
             const usage = item.quantityPerUnit || 0;
             const cost = mat?.costPerUnit || 0;
@@ -219,15 +212,15 @@ const RawMaterialBOM: React.FC = () => {
                             <thead className="bg-slate-50 text-slate-400 font-black text-[10px] uppercase tracking-[2px] border-b border-slate-100">
                                 <tr>
                                     <th className="px-8 py-5 w-10"></th>
-                                    <SortableTh label="ชื่อวัตถุดิบ (Raw Material)" sortKey="name" currentSort={sortConfig} onSort={requestSort} />
-                                    <SortableTh label="จำนวนคงเหลือ" sortKey="quantity" currentSort={sortConfig} onSort={requestSort} align="center" />
-                                    <SortableTh label="หน่วย" sortKey="unit" currentSort={sortConfig} onSort={requestSort} align="center" />
-                                    <SortableTh label="ต้นทุน/หน่วย" sortKey="costPerUnit" currentSort={sortConfig} onSort={requestSort} align="right" />
+                                    <th className="px-6 py-5">ชื่อวัตถุดิบ (Raw Material)</th>
+                                    <th className="px-6 py-5 w-40 text-center">จำนวนคงเหลือ</th>
+                                    <th className="px-6 py-5 w-24 text-center">หน่วย</th>
+                                    <th className="px-8 py-5 w-40 text-right">ต้นทุน/หน่วย</th>
                                     <th className="px-6 py-5 text-center">จัดการ (Actions)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {sortedMaterials.map(m => {
+                                {filteredMaterials.map(m => {
                                     // Resolve Supplier Name
                                     const supplierName = factory_suppliers.find(s => s.id === m.defaultSupplierId)?.name || 'Unknown Supplier';
                                     
@@ -372,9 +365,9 @@ const RawMaterialBOM: React.FC = () => {
                                             </thead>
                                             <tbody className="divide-y divide-slate-50">
                                                 {selectedProduct.bom.map((item, idx) => {
-                                                    // Ensure we have a valid material match by ID first, then name (robust matching)
+                                                    // Ensure we have a valid material match by ID first, then name
                                                     const mat = packing_raw_materials.find(m => m.id === item.materialId) || 
-                                                                packing_raw_materials.find(m => m.name.trim().toLowerCase() === item.materialName.trim().toLowerCase());
+                                                                packing_raw_materials.find(m => m.name === item.materialName);
                                                     
                                                     const requiredAmount = (item.quantityPerUnit || 0) * simulationQty;
                                                     const currentStock = mat?.quantity || 0;
@@ -386,7 +379,7 @@ const RawMaterialBOM: React.FC = () => {
                                                             <td className="py-4 pl-2">
                                                                 <SearchableSelect 
                                                                     options={materialOptions}
-                                                                    value={mat?.id || item.materialId} // Use resolved ID or fallback
+                                                                    value={mat?.id || item.materialId} // Use resolved ID
                                                                     onChange={(val) => {
                                                                         const newBOM = [...selectedProduct.bom!];
                                                                         const m = packing_raw_materials.find(x => x.id === val);

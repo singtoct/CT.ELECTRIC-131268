@@ -86,7 +86,7 @@ export interface Machine {
   location: string;
   workingHoursPerDay: number;
   lastStartedAt?: string;
-  tonnage?: number; // Clamping force in Tons (e.g., 120T, 250T)
+  tonnage?: number; // New: Machine Clamping Force (Tons)
 }
 
 export interface CostItem {
@@ -182,6 +182,8 @@ export interface Product {
   cycleTimeSeconds: number;
   laborAllocation: number;
   createsRawMaterialId?: string;
+  minTonnage?: number; // New: Minimum machine size required
+  cavity?: number; // New: Number of parts per shot
   
   // Financials
   totalCost: number;
@@ -196,7 +198,6 @@ export interface Product {
   category?: string; 
   standardColor?: string;
   profitMargin?: number;
-  minTonnage?: number; // Minimum required machine tonnage
   
   aiPriceRecommendation?: AiPriceRecommendation;
   
@@ -236,8 +237,6 @@ export interface FactorySupplier {
   phone: string;
   name: string;
   contactPerson: string;
-  address?: string;
-  taxId?: string;
 }
 
 export interface FactoryQuotation {

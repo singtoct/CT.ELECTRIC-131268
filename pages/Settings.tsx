@@ -6,7 +6,7 @@ import {
     Save, Plus, Trash2, Upload, Download, Loader2, Check, 
     AlertTriangle, RefreshCcw, Database, Settings as SettingsIcon,
     FileText, Box, Activity, AlertOctagon, CheckSquare, Square,
-    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles, X, Factory
+    Truck, ClipboardCheck, Cpu, Layers, Key, Sparkles, X, Factory, Weight
 } from 'lucide-react';
 import { FactoryData, FactorySettings, CostItem, Machine } from '../types';
 import { sanitizeData } from '../services/firebase';
@@ -79,7 +79,7 @@ const StringListEditor = ({
     );
 };
 
-// Machine List Editor Component
+// Machine List Editor Component (Updated with Tonnage)
 const MachineListEditor = ({ 
     machines = [], 
     onUpdate 
@@ -89,6 +89,7 @@ const MachineListEditor = ({
 }) => {
     const [newName, setNewName] = useState('');
     const [newLocation, setNewLocation] = useState('');
+    const [newTonnage, setNewTonnage] = useState<number>(0);
 
     const handleAdd = () => {
         if (!newName.trim()) return;
@@ -97,16 +98,22 @@ const MachineListEditor = ({
             name: newName,
             location: newLocation || 'Factory Floor',
             status: 'ว่าง',
-            workingHoursPerDay: 18 // Default
+            workingHoursPerDay: 18,
+            tonnage: newTonnage > 0 ? newTonnage : undefined
         };
         onUpdate([...machines, newMachine]);
         setNewName('');
         setNewLocation('');
+        setNewTonnage(0);
     };
 
     const handleDelete = (id: string) => {
         if(!confirm("ยืนยันลบเครื่องจักร?")) return;
         onUpdate(machines.filter(m => m.id !== id));
+    };
+
+    const handleUpdateTonnage = (id: string, tonnage: number) => {
+        onUpdate(machines.map(m => m.id === id ? { ...m, tonnage } : m));
     };
 
     return (
@@ -124,6 +131,17 @@ const MachineListEditor = ({
                              <div className="font-bold text-slate-800 text-sm">{m.name}</div>
                              <div className="text-[10px] text-slate-500">{m.location}</div>
                          </div>
+                         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                             <Weight size={10} className="text-slate-400"/>
+                             <input 
+                                type="number" 
+                                className="w-10 text-[10px] font-bold text-slate-700 outline-none text-right bg-transparent"
+                                value={m.tonnage || ''}
+                                placeholder="Ton"
+                                onChange={(e) => handleUpdateTonnage(m.id, parseFloat(e.target.value) || 0)}
+                             />
+                             <span className="text-[10px] text-slate-400">T</span>
+                         </div>
                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${m.status === 'ว่าง' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{m.status}</span>
                          <button onClick={() => handleDelete(m.id)} className="text-slate-300 hover:text-red-500 px-1">
                             <Trash2 size={16} />
@@ -138,15 +156,22 @@ const MachineListEditor = ({
                         type="text" 
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
-                        placeholder="ชื่อเครื่อง (เช่น เครื่องฉีด 1)"
+                        placeholder="ชื่อเครื่อง"
                         className="flex-[2] text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-bold"
                     />
                     <input 
                         type="text" 
                         value={newLocation}
                         onChange={(e) => setNewLocation(e.target.value)}
-                        placeholder="โซน/ตำแหน่ง"
+                        placeholder="ตำแหน่ง"
                         className="flex-1 text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900"
+                    />
+                    <input 
+                        type="number" 
+                        value={newTonnage || ''}
+                        onChange={(e) => setNewTonnage(parseFloat(e.target.value))}
+                        placeholder="Tons"
+                        className="w-16 text-sm px-2 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 text-center"
                     />
                     <button 
                         onClick={handleAdd}
@@ -473,7 +498,7 @@ const Settings: React.FC = () => {
                              </div>
                         </div>
 
-                        {/* Machine Management (New) */}
+                        {/* Machine Management (Updated with Tonnage) */}
                         <MachineListEditor 
                             machines={allData.factory_machines} 
                             onUpdate={handleUpdateMachines} 

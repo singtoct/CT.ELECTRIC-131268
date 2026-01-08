@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useFactoryData, useFactoryActions, useApiKey } from '../App';
 import { useTranslation } from '../services/i18n';
 import { 
-    Search, Plus, Edit2, Trash2, X, Save, Sparkles, Check, Loader2, Package, RefreshCw
+    Search, Plus, Edit2, Trash2, X, Save, Sparkles, Check, Loader2, Package, RefreshCw, Layers
 } from 'lucide-react';
 import { Product, AiPriceRecommendation } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -39,7 +39,9 @@ const Products: React.FC = () => {
                 cycleTimeSeconds: 15,
                 salePrice: 0,
                 cost: 0,
-                productType: 'FinishedGood'
+                productType: 'FinishedGood',
+                cavity: 1, // Default cavity
+                minTonnage: 0 // Default min tonnage
             });
         }
         setIsModalOpen(true);
@@ -67,11 +69,10 @@ const Products: React.FC = () => {
         let materialCost = 0;
         if (currentProduct.bom) {
             currentProduct.bom.forEach(b => {
-                // Robust Material Finding: Try ID, then trimmed/lowercase Name
-                const mat = packing_raw_materials.find(m => m.id === b.materialId) ||
-                            packing_raw_materials.find(m => m.name.trim().toLowerCase() === b.materialName.trim().toLowerCase());
-                
-                const cost = mat ? mat.costPerUnit : 0;
+                const mat = packing_raw_materials.find(m => m.id === b.materialId);
+                // Fallback name matching if ID not found
+                const matByName = !mat ? packing_raw_materials.find(m => m.name === b.materialName) : null;
+                const cost = mat ? mat.costPerUnit : (matByName ? matByName.costPerUnit : 0);
                 
                 if (cost) materialCost += b.quantityPerUnit * cost;
             });
@@ -200,13 +201,25 @@ const Products: React.FC = () => {
                         </div>
                         <div className="p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
                             <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{t('product.name')}</label><input type="text" value={currentProduct.name} onChange={e => setCurrentProduct({...currentProduct, name: e.target.value})} className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none" /></div>
+                            
                             <div className="grid grid-cols-2 gap-4">
                                 <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{t('product.color')}</label><input type="text" value={currentProduct.color} onChange={e => setCurrentProduct({...currentProduct, color: e.target.value})} className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none" /></div>
-                                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{t('product.cycleTime')}</label><input type="number" value={currentProduct.cycleTimeSeconds} onChange={e => setCurrentProduct({...currentProduct, cycleTimeSeconds: parseInt(e.target.value) || 0})} className="w-full px-4 py-3 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none" /></div>
+                                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{t('product.price')}</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">฿</span><input type="number" value={currentProduct.salePrice} onChange={e => setCurrentProduct({...currentProduct, salePrice: parseFloat(e.target.value) || 0})} className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl font-black text-xl text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none" /></div></div>
                             </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{t('product.price')}</label>
-                                <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">฿</span><input type="number" value={currentProduct.salePrice} onChange={e => setCurrentProduct({...currentProduct, salePrice: parseFloat(e.target.value) || 0})} className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl font-black text-xl text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none" /></div>
+
+                            {/* Production Params Section */}
+                            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
+                                <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                    <Layers size={14}/> Production Parameters
+                                </h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{t('product.cycleTime')}</label><input type="number" value={currentProduct.cycleTimeSeconds} onChange={e => setCurrentProduct({...currentProduct, cycleTimeSeconds: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none bg-white" /></div>
+                                    <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cavity (Pcs/Shot)</label><input type="number" value={currentProduct.cavity || 1} onChange={e => setCurrentProduct({...currentProduct, cavity: parseInt(e.target.value) || 1})} className="w-full px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none bg-white" /></div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Min Machine Tonnage (T)</label>
+                                    <input type="number" value={currentProduct.minTonnage || 0} onChange={e => setCurrentProduct({...currentProduct, minTonnage: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 outline-none bg-white" placeholder="e.g. 120 Tons" />
+                                </div>
                             </div>
                             
                             {/* AI Price Recommendation Section */}
