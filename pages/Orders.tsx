@@ -9,7 +9,8 @@ import {
     AlertOctagon, CheckCircle2, Factory, LayoutList,
     Link as LinkIcon, AlertTriangle, MoreHorizontal, Wrench,
     ArrowUpDown, Edit3, X, Save, Plus, Trash2, Calendar, User,
-    CalendarClock, Printer, Settings2, Timer, Minus, Activity, CheckSquare, Square
+    CalendarClock, Printer, Settings2, Timer, Minus, Activity, CheckSquare, Square,
+    Filter, RefreshCcw
 } from 'lucide-react';
 import { ProductionDocument, MoldingLog } from '../types';
 
@@ -42,8 +43,10 @@ const Orders: React.FC = () => {
   });
 
   // Machine Assignment State (Product Name -> Array of Machine Names)
-  // Example: { "Product A": ["Machine 1", "Machine 2"] }
   const [machineAssignments, setMachineAssignments] = useState<Record<string, string[]>>({});
+  
+  // Custom Calculation Selection State
+  const [selectedPlanItems, setSelectedPlanItems] = useState<string[]>([]);
   
   // UI State for dropdowns
   const [openMachineSelector, setOpenMachineSelector] = useState<string | null>(null);
@@ -216,6 +219,36 @@ const Orders: React.FC = () => {
     setSortConfig({ key, direction });
   };
 
+  const togglePlanSelection = (productName: string) => {
+      setSelectedPlanItems(prev => 
+          prev.includes(productName) 
+          ? prev.filter(p => p !== productName)
+          : [...prev, productName]
+      );
+  };
+
+  const toggleSelectAll = () => {
+      const urgentItems = planningData.filter(p => p.netRequired > 0).map(p => p.productName);
+      if (selectedPlanItems.length === urgentItems.length) {
+          setSelectedPlanItems([]);
+      } else {
+          setSelectedPlanItems(urgentItems);
+      }
+  };
+
+  // --- Derived Calculation for Summary ---
+  const calculationSummary = useMemo(() => {
+      // If items are selected, use only those. Else use ALL urgent items.
+      const targetItems = selectedPlanItems.length > 0 
+          ? planningData.filter(p => selectedPlanItems.includes(p.productName))
+          : planningData.filter(p => p.netRequired > 0);
+
+      const totalItems = targetItems.length;
+      const totalDays = targetItems.reduce((sum, p) => sum + p.daysToFinish, 0);
+      
+      return { totalItems, totalDays };
+  }, [planningData, selectedPlanItems]);
+
   const SortIcon = ({ columnKey }: { columnKey: string }) => {
       if (sortConfig?.key !== columnKey) return <ArrowUpDown size={12} className="opacity-20 ml-1 inline-block" />;
       return sortConfig.direction === 'asc' 
@@ -386,15 +419,20 @@ const Orders: React.FC = () => {
                       
                       <div className="h-10 w-px bg-slate-200 hidden md:block print:hidden"></div>
 
-                      <div className="flex gap-4">
+                      {/* --- CUSTOM CALCULATION SUMMARY --- */}
+                      <div className={`flex gap-4 p-2 rounded-xl transition-colors ${selectedPlanItems.length > 0 ? 'bg-indigo-50 border border-indigo-200' : ''}`}>
                           <div className="text-right">
-                              <div className="text-[10px] text-slate-400 font-bold uppercase print:text-black">Total Urgent Jobs</div>
-                              <div className="text-xl font-black text-rose-600 print:text-black">{planningData.filter(p => p.netRequired > 0).length} Items</div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase print:text-black">
+                                  {selectedPlanItems.length > 0 ? 'Calculating Selected' : 'Total Urgent Jobs'}
+                              </div>
+                              <div className={`text-xl font-black print:text-black ${selectedPlanItems.length > 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                  {calculationSummary.totalItems} Items
+                              </div>
                           </div>
                           <div className="text-right pl-4 border-l border-slate-100 print:border-black">
                               <div className="text-[10px] text-slate-400 font-bold uppercase print:text-black">Est. Machine Days</div>
-                              <div className="text-xl font-black text-indigo-600 print:text-black">
-                                  {planningData.reduce((sum, p) => sum + (p.netRequired > 0 ? p.daysToFinish : 0), 0).toFixed(1)} Days
+                              <div className={`text-xl font-black print:text-black ${selectedPlanItems.length > 0 ? 'text-indigo-600' : 'text-slate-800'}`}>
+                                  {calculationSummary.totalDays.toFixed(1)} Days
                               </div>
                           </div>
                       </div>
@@ -494,9 +532,22 @@ const Orders: React.FC = () => {
                                   <th className="px-6 py-4 text-center print-hidden">Actions</th>
                               </tr>
                           ) : (
-                              // --- PLANNING VIEW HEADER ---
+                              // --- PLANNING VIEW HEADER (With Select All) ---
                               <tr className="bg-indigo-50 text-indigo-800 print:bg-slate-200 print:text-black">
-                                  <th className="px-6 py-4 min-w-[200px]">สินค้า (Product)</th>
+                                  <th className="px-6 py-4 min-w-[200px] flex items-center gap-3">
+                                      <div className="print-hidden">
+                                          <button 
+                                            onClick={toggleSelectAll} 
+                                            className="text-indigo-600 hover:text-indigo-800 transition-colors"
+                                            title="Select All Urgent Items"
+                                          >
+                                              {planningData.filter(p => p.netRequired > 0).every(p => selectedPlanItems.includes(p.productName)) 
+                                                ? <CheckSquare size={18}/> 
+                                                : <Square size={18}/>}
+                                          </button>
+                                      </div>
+                                      สินค้า (Product)
+                                  </th>
                                   <th className="px-4 py-4 text-center text-rose-600">เร่งด่วน (Urgent Qty)</th>
                                   <th className="px-4 py-4 text-center">Cycle Time</th>
                                   <th className="px-4 py-4 text-center">กำลังผลิต/วัน (1 เครื่อง)</th>
@@ -508,13 +559,16 @@ const Orders: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-100 print:divide-black">
                           {planningData.map((row, idx) => {
-                              // Filter out completed items in Planning View
+                              // Filter out completed items in Planning View (Optionally could keep them but greyed out)
+                              // Currently defaulting to only show items with need for clean view
                               if (viewMode === 'plan' && row.netRequired <= 0) return null;
+
+                              const isSelected = selectedPlanItems.includes(row.productName);
 
                               return (
                                   <React.Fragment key={idx}>
                                       <tr 
-                                        className={`hover:bg-slate-50 transition-colors cursor-pointer group ${expandedProduct === row.productName ? 'bg-slate-50' : ''}`}
+                                        className={`hover:bg-slate-50 transition-colors cursor-pointer group ${expandedProduct === row.productName ? 'bg-slate-50' : ''} ${isSelected && viewMode === 'plan' ? 'bg-indigo-50/60' : ''}`}
                                         onClick={() => setExpandedProduct(expandedProduct === row.productName ? null : row.productName)}
                                       >
                                           {viewMode === 'status' ? (
@@ -567,11 +621,22 @@ const Orders: React.FC = () => {
                                                   </td>
                                               </>
                                           ) : (
-                                              // --- PLANNING ROW (With Specific Machine Assignment) ---
+                                              // --- PLANNING ROW (With Checkbox) ---
                                               <>
-                                                  <td className="px-6 py-4">
-                                                      <div className="font-black text-slate-800 text-sm">{row.productName}</div>
-                                                      <div className="text-[10px] text-slate-400 mt-1">Due: {row.dateDisplay}</div>
+                                                  <td className="px-6 py-4 flex items-center gap-3">
+                                                      <div 
+                                                        className="print-hidden cursor-pointer"
+                                                        onClick={(e) => { e.stopPropagation(); togglePlanSelection(row.productName); }}
+                                                      >
+                                                          {isSelected 
+                                                            ? <CheckSquare size={18} className="text-indigo-600"/> 
+                                                            : <Square size={18} className="text-slate-300 hover:text-indigo-400"/>
+                                                          }
+                                                      </div>
+                                                      <div>
+                                                          <div className={`font-black text-sm ${isSelected ? 'text-indigo-800' : 'text-slate-800'}`}>{row.productName}</div>
+                                                          <div className="text-[10px] text-slate-400 mt-1">Due: {row.dateDisplay}</div>
+                                                      </div>
                                                   </td>
                                                   <td className="px-4 py-4 text-center">
                                                       <span className="font-black text-lg text-rose-600 bg-rose-50 px-2 py-1 rounded print:bg-transparent print:text-black print:border print:border-black">{row.netRequired.toLocaleString()}</span>
@@ -586,12 +651,10 @@ const Orders: React.FC = () => {
                                                   
                                                   {/* Machine Assignment Dropdown */}
                                                   <td className="px-4 py-4 text-center relative">
-                                                      {/* Print View: Just Text */}
                                                       <div className="hidden print:block text-xs font-bold text-black">
                                                           {row.assignedList.length > 0 ? row.assignedList.join(', ') : `Auto (${row.machinesUsedCount} M/C)`}
                                                       </div>
 
-                                                      {/* Screen View: Dropdown Selector */}
                                                       <div className="screen-machine-selector flex items-center justify-center">
                                                           <div className="relative">
                                                               <button 
@@ -605,7 +668,6 @@ const Orders: React.FC = () => {
                                                                   <ChevronDown size={12} className={`transition-transform ${openMachineSelector === row.productName ? 'rotate-180' : ''}`}/>
                                                               </button>
 
-                                                              {/* Dropdown Menu */}
                                                               {openMachineSelector === row.productName && (
                                                                   <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95">
                                                                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 py-1 mb-1">Select Machines</div>
@@ -647,7 +709,7 @@ const Orders: React.FC = () => {
                                           )}
                                       </tr>
                                       
-                                      {/* Expandable Order List */}
+                                      {/* Expandable Order List (Only in Status View) */}
                                       {expandedProduct === row.productName && viewMode === 'status' && (
                                           <tr>
                                               <td colSpan={10 + processColumns.length} className="px-0 py-0 bg-slate-50/50">
