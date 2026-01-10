@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useFactoryData, useFactoryActions } from '../App';
 import { useTranslation } from '../services/i18n';
-import { Archive, Layers, Search, Edit3, Save, X, GitMerge, Factory } from 'lucide-react';
+import { Archive, Layers, Search, Edit3, Save, X, GitMerge, Factory, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { InventoryItem } from '../types';
 
 const Inventory: React.FC = () => {
@@ -14,9 +14,36 @@ const Inventory: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'finished' | 'raw' | 'component'>('finished');
   const [search, setSearch] = useState('');
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof InventoryItem; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
   const currentData = activeTab === 'finished' ? packing_inventory : (activeTab === 'raw' ? packing_raw_materials.filter(i => i.category !== 'Component') : packing_raw_materials.filter(i => i.category === 'Component'));
-  const filteredData = currentData.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));
+  
+  const sortedData = useMemo(() => {
+      const filtered = currentData.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));
+      return filtered.sort((a, b) => {
+          const aValue = a[sortConfig.key];
+          const bValue = b[sortConfig.key];
+          
+          if (aValue === undefined || bValue === undefined) return 0;
+
+          if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+      });
+  }, [currentData, search, sortConfig]);
+
+  const handleSort = (key: keyof InventoryItem) => {
+      let direction: 'asc' | 'desc' = 'asc';
+      if (sortConfig.key === key && sortConfig.direction === 'asc') {
+          direction = 'desc';
+      }
+      setSortConfig({ key, direction });
+  };
+
+  const SortIcon = ({ colKey }: { colKey: keyof InventoryItem }) => {
+      if (sortConfig.key !== colKey) return <ArrowUpDown size={12} className="opacity-20 ml-1 inline-block"/>;
+      return sortConfig.direction === 'asc' ? <ChevronUp size={12} className="ml-1 inline-block"/> : <ChevronDown size={12} className="ml-1 inline-block"/>;
+  };
 
   const handleUpdateStock = async () => {
     if (!editingItem) return;
@@ -59,16 +86,16 @@ const Inventory: React.FC = () => {
             </div>
         </div>
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-400 font-black border-b border-slate-200 uppercase tracking-[2px] text-[10px]">
+          <thead className="bg-slate-50 text-slate-500 font-black border-b border-slate-200 uppercase tracking-[2px] text-[10px]">
             <tr>
-              <th className="px-8 py-5">{t('inv.itemName')}</th>
-              <th className="px-6 py-5 text-right">{t('inv.inStock')}</th>
-              <th className="px-6 py-5 text-center">{t('inv.unit')}</th>
+              <th onClick={() => handleSort('name')} className="px-8 py-5 cursor-pointer hover:bg-slate-100 transition-colors">{t('inv.itemName')} <SortIcon colKey="name"/></th>
+              <th onClick={() => handleSort('quantity')} className="px-6 py-5 text-right cursor-pointer hover:bg-slate-100 transition-colors">{t('inv.inStock')} <SortIcon colKey="quantity"/></th>
+              <th onClick={() => handleSort('unit')} className="px-6 py-5 text-center cursor-pointer hover:bg-slate-100 transition-colors">{t('inv.unit')} <SortIcon colKey="unit"/></th>
               <th className="px-8 py-5 text-right">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredData.map((item) => (
+            {sortedData.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                 <td className="px-8 py-4 font-black text-slate-800 text-base">{item.name}</td>
                 <td className="px-6 py-4 text-right font-mono font-black text-primary-600 text-xl">{(item.quantity || 0).toLocaleString()}</td>
